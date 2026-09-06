@@ -1,6 +1,6 @@
 import './style.css';
 
-const APP_VERSION = 'v0.5.0';
+const APP_VERSION = 'v0.6.0';
 const SERVICE_UUID = '5f8a0001-4e56-4e46-9a7c-000000000001';
 const CHARACTERISTIC_UUID = '5f8a0001-4e56-4e46-9a7c-000000000002';
 const MAP_WIDTH = 40;
@@ -106,7 +106,7 @@ function renderOled() {
   context.font = '5px monospace';
   context.fillText('REM', 1, 38);
   context.font = 'bold 12px monospace';
-  context.fillText(formatNumber(state.remaining), 1, 55);
+  context.fillText(formatNumber(state.remaining), 1, 63);
 
   context.lineWidth = 1.3;
   drawArrow(context, 69, 10, state.navigationAngle, 8);
@@ -117,7 +117,7 @@ function renderOled() {
   context.fillText('TOT', 62, 50);
   context.font = '6px monospace';
   context.fillText(formatNumber(state.average), 62, 42);
-  context.fillText(formatNumber(state.total), 62, 60);
+  context.fillText(formatNumber(state.total), 62, 63);
 
   context.strokeStyle = '#9dcfb5';
   context.beginPath();
@@ -140,10 +140,14 @@ function renderOled() {
   const routeOrder = getRouteOrder();
   if (routeOrder.length > 0) {
     context.fillStyle = '#020504';
-    const gapLength = Math.min(5, routeOrder.length);
-    for (let offset = 0; offset < gapLength; offset += 1) {
-      const routePixel = routeOrder[(routeAnimationCursor + offset) % routeOrder.length];
-      context.fillRect(88 + (routePixel % MAP_WIDTH), Math.floor(routePixel / MAP_WIDTH), 1, 1);
+    const gapLength = 5;
+    const gapCount = getRouteGapCount(routeOrder.length);
+    for (let gapIndex = 0; gapIndex < gapCount; gapIndex += 1) {
+      const gapStart = (routeAnimationCursor + Math.floor((gapIndex * routeOrder.length) / gapCount)) % routeOrder.length;
+      for (let offset = 0; offset < gapLength; offset += 1) {
+        const routePixel = routeOrder[(gapStart + offset) % routeOrder.length];
+        context.fillRect(88 + (routePixel % MAP_WIDTH), Math.floor(routePixel / MAP_WIDTH), 1, 1);
+      }
     }
   }
 }
@@ -195,6 +199,13 @@ function getRouteOrder() {
     }
   }
   return order;
+}
+
+function getRouteGapCount(routeLength) {
+  if (routeLength <= 15) return 1;
+  if (routeLength <= 30) return 2;
+  if (routeLength <= 45) return 3;
+  return 4;
 }
 
 function mapPoint(event) {
@@ -414,7 +425,7 @@ function setActiveLayer(layer) {
   document.querySelector('#layer-map').classList.toggle('active', layer === 'map');
   document.querySelector('#layer-route').classList.toggle('active', layer === 'route');
   document.querySelector('#layer-help').textContent = layer === 'route'
-    ? 'Rysuj aktualna trase. Na OLED porusza sie po niej jeden punkt, od dolu do gory, wierszami.'
+    ? 'Rysuj aktualna trase. Po OLED porusza sie od jednej do czterech zsynchronizowanych przerw.'
     : 'Rysuj stale tlo minimapy myszka lub palcem. Trasa jest osobna warstwa.';
 }
 

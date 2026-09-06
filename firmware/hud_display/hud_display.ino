@@ -6,7 +6,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
-static const char *FIRMWARE_VERSION = "v0.5.0";
+static const char *FIRMWARE_VERSION = "v0.6.0";
 static const uint8_t I2C_SDA_PIN = 1;
 static const uint8_t I2C_SCL_PIN = 2;
 static const uint8_t OLED_ADDRESS = 0x3C;
@@ -89,19 +89,35 @@ uint16_t countRoutePixels() {
   return count;
 }
 
+uint8_t getRouteGapCount(uint16_t routePixels) {
+  if (routePixels <= 15) return 1;
+  if (routePixels <= 30) return 2;
+  if (routePixels <= 45) return 3;
+  return 4;
+}
+
 void drawAnimatedRoute() {
   const uint16_t routePixels = countRoutePixels();
   if (routePixels == 0) return;
   if (routeCursor >= routePixels) routeCursor = 0;
 
-  const uint16_t gapLength = min(static_cast<uint16_t>(5), routePixels);
+  const uint8_t gapCount = getRouteGapCount(routePixels);
+  const uint16_t gapLength = 5;
   uint16_t current = 0;
   for (int16_t y = MAP_HEIGHT - 1; y >= 0; y--) {
     for (uint8_t x = 0; x < MAP_WIDTH; x++) {
       const uint16_t index = y * MAP_WIDTH + x;
       if (routeBitmap[(y * MAP_ROW_BYTES) + (x / 8)] & (0x80 >> (x % 8))) {
-        const uint16_t distanceFromGap = (current + routePixels - routeCursor) % routePixels;
-        if (distanceFromGap < gapLength) {
+        bool isGap = false;
+        for (uint8_t gapIndex = 0; gapIndex < gapCount; gapIndex++) {
+          const uint16_t gapStart = (routeCursor + (static_cast<uint32_t>(gapIndex) * routePixels) / gapCount) % routePixels;
+          const uint16_t distanceFromGap = (current + routePixels - gapStart) % routePixels;
+          if (distanceFromGap < gapLength) {
+            isGap = true;
+            break;
+          }
+        }
+        if (isGap) {
           display.drawPixel(88 + x, y, SSD1306_BLACK);
         }
         current++;
@@ -125,7 +141,7 @@ void renderHud() {
   display.setCursor(1, 36);
   display.print("REM");
   display.setTextSize(2);
-  display.setCursor(1, 44);
+  display.setCursor(1, 48);
   display.printf("%3u", hudState.remaining);
   display.setTextSize(1);
 
@@ -137,7 +153,7 @@ void renderHud() {
   display.print("TOT");
   display.setCursor(62, 35);
   display.printf("%3u", hudState.average);
-  display.setCursor(62, 53);
+  display.setCursor(62, 56);
   display.printf("%3u", hudState.total);
 
   display.drawLine(87, 0, 87, 63, SSD1306_WHITE);
