@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08100e" />
+    <meta name="description" content="Live HUD editor for an ESP32 OLED display" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>DisplayTest HUD</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <span class="eyebrow">ESP32-S3 / SSD1306</span>
+          <h1>DisplayTest <span>HUD</span></h1>
+        </div>
+        <div class="version-tag" id="app-version">v0.1.0</div>
+      </header>
+
+      <section class="hero-grid">
+        <div class="intro-copy">
+          <p class="eyebrow">LIVE INSTRUMENT PANEL</p>
+          <h2>Buduj ekran<br /><em>piksel po pikselu.</em></h2>
+          <p class="lede">Steruj układem HUD-u na żywo. Każda zmiana trafia przez BLE do renderera na ESP32.</p>
+        </div>
+        <div class="connection-card">
+          <div class="card-heading">
+            <span>LINK STATUS</span>
+            <span class="status-dot" id="status-dot"></span>
+          </div>
+          <strong id="connection-status">Niepolaczono</strong>
+          <p id="connection-detail">Wybierz ESP32-S3, aby rozpocząć transmisję.</p>
+          <div class="connection-actions">
+            <button class="button button-primary" id="connect-button" type="button">Polacz z ESP32</button>
+            <button class="button button-quiet" id="disconnect-button" type="button" disabled>Rozlacz</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <article class="panel preview-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">128 x 64 MONO</p>
+              <h3>Podglad OLED</h3>
+            </div>
+            <span class="live-pill"><span></span> LIVE</span>
+          </div>
+          <div class="oled-frame">
+            <div class="oled-glass">
+              <canvas id="oled-preview" width="128" height="64" aria-label="Podglad ekranu OLED"></canvas>
+            </div>
+            <div class="screen-meta"><span>SSD1306</span><span>0x3C</span><span>GPIO 1 / 2</span></div>
+          </div>
+          <div class="preview-footnote">
+            <span class="pixel-key"></span>
+            <span>Układ jest renderowany w natywnej siatce 128 x 64.</span>
+          </div>
+        </article>
+
+        <article class="panel controls-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">TELEMETRIA TESTOWA</p>
+              <h3>Wartosci HUD</h3>
+            </div>
+            <span class="sync-label" id="sync-label">LOCAL</span>
+          </div>
+          <div class="control-grid">
+            <label class="field field-large">
+              <span>Predkosc <small>km/h</small></span>
+              <input id="speed" type="number" min="0" max="6553.5" step="0.1" value="23.4" inputmode="decimal" />
+            </label>
+            <label class="field">
+              <span>Heading <small>deg</small></span>
+              <input id="heading" type="number" min="0" max="359" step="1" value="182" inputmode="numeric" />
+            </label>
+            <label class="field field-large">
+              <span>Dystans pozostaly <small>km</small></span>
+              <input id="remaining" type="number" min="0" max="6553.5" step="0.1" value="12.8" inputmode="decimal" />
+            </label>
+            <label class="field">
+              <span>Kat nawigacji <small>deg</small></span>
+              <input id="navigation-angle" type="number" min="0" max="359" step="1" value="42" inputmode="numeric" />
+            </label>
+            <label class="field">
+              <span>Predkosc srednia <small>km/h</small></span>
+              <input id="average" type="number" min="0" max="6553.5" step="0.1" value="18.2" inputmode="decimal" />
+            </label>
+            <label class="field">
+              <span>Dystans calkowity <small>km</small></span>
+              <input id="total" type="number" min="0" max="6553.5" step="0.1" value="42.7" inputmode="decimal" />
+            </label>
+          </div>
+          <div class="angle-readout">
+            <span>Strzalka nawigacji</span>
+            <div class="compass-arrow-wrap">
+              <span class="compass-arrow" id="compass-arrow"></span>
+            </div>
+            <strong><span id="angle-readout">42</span> deg</strong>
+            <small>0 deg = gora / polnoc</small>
+          </div>
+        </article>
+      </section>
+
+      <section class="lower-grid">
+        <article class="panel map-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">BITMAP LAYER</p>
+              <h3>Minimapa <span>40 x 40</span></h3>
+            </div>
+            <span class="map-count" id="map-count">0 px</span>
+          </div>
+          <div class="map-editor-layout">
+            <div class="map-canvas-wrap">
+              <canvas id="map-editor" width="40" height="40" aria-label="Edytor bitmapy minimapy"></canvas>
+              <div class="map-scale-label"><span>0</span><span>40 px</span></div>
+            </div>
+            <div class="map-tools">
+              <p>Rysuj po mapie myszka lub palcem. Zmiany sa przesylane do ESP maksymalnie 10 razy na sekunde.</p>
+              <div class="tool-row">
+                <button class="button button-quiet" id="clear-map" type="button">Wyczysc</button>
+                <button class="button button-quiet" id="invert-map" type="button">Odwroc</button>
+              </div>
+              <div class="bitmap-status"><span class="pixel-key"></span><span id="bitmap-status">Gotowe lokalnie</span></div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="panel protocol-panel">
+          <p class="eyebrow">SYSTEM NOTES</p>
+          <h3>Protokol v1</h3>
+          <div class="protocol-list">
+            <div><span>BLE</span><strong>GATT / write NR</strong></div>
+            <div><span>I2C</span><strong>SDA 1 / SCL 2</strong></div>
+            <div><span>OLED</span><strong>SSD1306 128x64</strong></div>
+            <div><span>SYNC</span><strong>do 10 Hz</strong></div>
+          </div>
+          <p class="protocol-note">ESP32 renderuje ekran lokalnie. PWA przesyla tylko stan HUD-u i spakowane piksele mapy.</p>
+        </aside>
+      </section>
+
+      <footer class="footer-line">
+        <span>DisplayTest / Open instrument lab</span>
+        <span>Firmware: <strong>v0.1.0</strong></span>
+      </footer>
+    </main>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,232 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+
+static const char *FIRMWARE_VERSION = "v0.1.0";
+static const uint8_t I2C_SDA_PIN = 1;
+static const uint8_t I2C_SCL_PIN = 2;
+static const uint8_t OLED_ADDRESS = 0x3C;
+static const uint8_t SCREEN_WIDTH = 128;
+static const uint8_t SCREEN_HEIGHT = 64;
+static const uint8_t MAP_WIDTH = 40;
+static const uint8_t MAP_HEIGHT = 40;
+static const uint8_t MAP_ROW_BYTES = (MAP_WIDTH + 7) / 8;
+static const uint16_t MAP_BYTES = MAP_ROW_BYTES * MAP_HEIGHT;
+static const uint8_t MAP_CHUNK_BYTES = 16;
+
+static const char *SERVICE_UUID = "5f8a0001-4e56-4e46-9a7c-000000000001";
+static const char *CHARACTERISTIC_UUID = "5f8a0001-4e56-4e46-9a7c-000000000002";
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+BLECharacteristic *displayCharacteristic = nullptr;
+
+struct HudState {
+  float speed = 23.4f;
+  uint16_t heading = 182;
+  uint16_t navigationAngle = 42;
+  float average = 18.2f;
+  float remaining = 12.8f;
+  float total = 42.7f;
+};
+
+HudState hudState;
+uint8_t mapBitmap[MAP_BYTES] = {};
+uint8_t incomingMap[MAP_BYTES] = {};
+uint16_t incomingMapMask = 0;
+uint8_t incomingMapSequence = 0;
+uint8_t incomingMapChunks = 0;
+bool mapTransferActive = false;
+bool screenDirty = true;
+bool displayReady = false;
+bool clientConnected = false;
+unsigned long lastRender = 0;
+unsigned long lastStateLog = 0;
+
+uint16_t readUint16(const uint8_t *data) {
+  return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
+}
+
+void drawNavigationArrow(int16_t centerX, int16_t centerY, uint16_t angle) {
+  const float radians = angle * PI / 180.0f;
+  const int16_t tipX = centerX + static_cast<int16_t>(sin(radians) * 9.0f);
+  const int16_t tipY = centerY - static_cast<int16_t>(cos(radians) * 9.0f);
+  const int16_t leftX = centerX + static_cast<int16_t>(sin(radians + 2.45f) * 6.0f);
+  const int16_t leftY = centerY - static_cast<int16_t>(cos(radians + 2.45f) * 6.0f);
+  const int16_t rightX = centerX + static_cast<int16_t>(sin(radians - 2.45f) * 6.0f);
+  const int16_t rightY = centerY - static_cast<int16_t>(cos(radians - 2.45f) * 6.0f);
+
+  display.drawLine(centerX, centerY, tipX, tipY, SSD1306_WHITE);
+  display.drawLine(tipX, tipY, leftX, leftY, SSD1306_WHITE);
+  display.drawLine(tipX, tipY, rightX, rightY, SSD1306_WHITE);
+}
+
+void renderHud() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+
+  display.setCursor(1, 0);
+  display.print("SPD");
+  display.setTextSize(2);
+  display.setCursor(1, 7);
+  display.printf("%4.1f", hudState.speed);
+
+  display.setTextSize(1);
+  display.setCursor(48, 0);
+  display.print("HDG");
+  display.setCursor(48, 9);
+  display.printf("%03u", hudState.heading);
+
+  display.setCursor(1, 22);
+  display.print("REM");
+  display.setTextSize(2);
+  display.setCursor(1, 28);
+  display.printf("%4.1f", hudState.remaining);
+  display.setTextSize(1);
+  display.setCursor(32, 37);
+  display.print("km");
+
+  drawNavigationArrow(69, 29, hudState.navigationAngle);
+
+  display.drawLine(0, 45, 86, 45, SSD1306_WHITE);
+  display.setCursor(1, 51);
+  display.printf("A%4.1f", hudState.average);
+  display.setCursor(44, 51);
+  display.printf("T%4.1f", hudState.total);
+
+  display.drawLine(87, 0, 87, 39, SSD1306_WHITE);
+  display.drawBitmap(88, 0, mapBitmap, MAP_WIDTH, MAP_HEIGHT, SSD1306_WHITE);
+  display.display();
+  screenDirty = false;
+  lastRender = millis();
+}
+
+void applyStatePacket(const uint8_t *data, size_t length) {
+  if (length < 14 || data[0] != 'S') return;
+
+  hudState.speed = readUint16(data + 2) / 10.0f;
+  hudState.heading = readUint16(data + 4) % 360;
+  hudState.navigationAngle = readUint16(data + 6) % 360;
+  hudState.average = readUint16(data + 8) / 10.0f;
+  hudState.remaining = readUint16(data + 10) / 10.0f;
+  hudState.total = readUint16(data + 12) / 10.0f;
+  screenDirty = true;
+
+  if (millis() - lastStateLog > 1000) {
+    Serial.printf("[%s] HUD state: speed=%.1f heading=%u nav=%u remaining=%.1f\n",
+                  FIRMWARE_VERSION,
+                  hudState.speed,
+                  hudState.heading,
+                  hudState.navigationAngle,
+                  hudState.remaining);
+    lastStateLog = millis();
+  }
+}
+
+void applyMapPacket(const uint8_t *data, size_t length) {
+  if (length < 4 || data[0] != 'M') return;
+
+  const uint8_t sequence = data[1];
+  const uint8_t chunkIndex = data[2];
+  const uint8_t chunkCount = data[3];
+  if (chunkCount == 0 || chunkCount > 16 || chunkIndex >= chunkCount) return;
+
+  if (!mapTransferActive || sequence != incomingMapSequence || chunkCount != incomingMapChunks) {
+    memset(incomingMap, 0, sizeof(incomingMap));
+    incomingMapMask = 0;
+    incomingMapSequence = sequence;
+    incomingMapChunks = chunkCount;
+    mapTransferActive = true;
+  }
+
+  const uint16_t offset = chunkIndex * MAP_CHUNK_BYTES;
+  const uint8_t available = min(static_cast<size_t>(MAP_CHUNK_BYTES), length - 4);
+  if (offset < MAP_BYTES) {
+    memcpy(incomingMap + offset, data + 4, min(static_cast<uint16_t>(available), static_cast<uint16_t>(MAP_BYTES - offset)));
+  }
+  incomingMapMask |= static_cast<uint16_t>(1U << chunkIndex);
+
+  const uint16_t expectedMask = static_cast<uint16_t>((1U << chunkCount) - 1U);
+  if (incomingMapMask == expectedMask) {
+    memcpy(mapBitmap, incomingMap, MAP_BYTES);
+    mapTransferActive = false;
+    screenDirty = true;
+    Serial.printf("[%s] Map updated: %u chunks\n", FIRMWARE_VERSION, chunkCount);
+  }
+}
+
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *) override {
+    clientConnected = true;
+    Serial.printf("[%s] BLE client connected\n", FIRMWARE_VERSION);
+  }
+
+  void onDisconnect(BLEServer *) override {
+    clientConnected = false;
+    Serial.printf("[%s] BLE client disconnected\n", FIRMWARE_VERSION);
+    BLEDevice::startAdvertising();
+  }
+};
+
+class DisplayCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *characteristic) override {
+    uint8_t *data = characteristic->getData();
+    const size_t length = characteristic->getLength();
+    if (data == nullptr || length == 0) return;
+
+    if (data[0] == 'S') {
+      applyStatePacket(data, length);
+    } else if (data[0] == 'M') {
+      applyMapPacket(data, length);
+    }
+  }
+};
+
+void startBluetooth() {
+  BLEDevice::init("HUD ESP32-S3");
+  BLEServer *server = BLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
+
+  BLEService *service = server->createService(SERVICE_UUID);
+  displayCharacteristic = service->createCharacteristic(
+    CHARACTERISTIC_UUID,
+    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
+  );
+  displayCharacteristic->setCallbacks(new DisplayCallbacks());
+  service->start();
+
+  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  advertising->addServiceUUID(SERVICE_UUID);
+  advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+  Serial.printf("[%s] BLE advertising as HUD ESP32-S3\n", FIRMWARE_VERSION);
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.printf("\nDisplayTest HUD firmware %s\n", FIRMWARE_VERSION);
+  Serial.printf("I2C: SDA=GPIO%u SCL=GPIO%u address=0x%02X\n", I2C_SDA_PIN, I2C_SCL_PIN, OLED_ADDRESS);
+
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, 400000);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
+    Serial.printf("[%s] ERROR: SSD1306 not found at 0x%02X\n", FIRMWARE_VERSION, OLED_ADDRESS);
+  } else {
+    displayReady = true;
+    Serial.printf("[%s] SSD1306 initialized\n", FIRMWARE_VERSION);
+    renderHud();
+  }
+
+  startBluetooth();
+}
+
+void loop() {
+  if (displayReady && screenDirty && millis() - lastRender >= 10) renderHud();
+  delay(1);
+}

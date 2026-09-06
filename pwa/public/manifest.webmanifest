@@ -1,0 +1,19 @@
+{
+  "name": "DisplayTest HUD",
+  "short_name": "HUD",
+  "description": "Live HUD editor for ESP32-S3 and SSD1306 OLED",
+  "start_url": "/DisplayTest/",
+  "scope": "/DisplayTest/",
+  "display": "standalone",
+  "background_color": "#08100e",
+  "theme_color": "#08100e",
+  "lang": "pl",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
