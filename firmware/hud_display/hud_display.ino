@@ -6,7 +6,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
-static const char *FIRMWARE_VERSION = "v0.2.0";
+static const char *FIRMWARE_VERSION = "v0.4.0";
 static const uint8_t I2C_SDA_PIN = 1;
 static const uint8_t I2C_SCL_PIN = 2;
 static const uint8_t OLED_ADDRESS = 0x3C;
@@ -17,7 +17,7 @@ static const uint8_t MAP_HEIGHT = 64;
 static const uint8_t MAP_ROW_BYTES = (MAP_WIDTH + 7) / 8;
 static const uint16_t MAP_BYTES = MAP_ROW_BYTES * MAP_HEIGHT;
 static const uint8_t MAP_CHUNK_BYTES = 16;
-static const uint16_t ROUTE_STEP_MS = 85;
+static const uint16_t ROUTE_STEP_MS = 28;
 
 static const char *SERVICE_UUID = "5f8a0001-4e56-4e46-9a7c-000000000001";
 static const char *CHARACTERISTIC_UUID = "5f8a0001-4e56-4e46-9a7c-000000000002";
@@ -100,7 +100,7 @@ void drawAnimatedRoute() {
       const uint16_t index = y * MAP_WIDTH + x;
       if (routeBitmap[(y * MAP_ROW_BYTES) + (x / 8)] & (0x80 >> (x % 8))) {
         if (current == routeCursor) {
-          display.drawPixel(88 + x, y, SSD1306_WHITE);
+          display.drawPixel(88 + x, y, SSD1306_BLACK);
           return;
         }
         current++;
@@ -116,26 +116,32 @@ void renderHud() {
 
   display.setCursor(1, 0);
   display.print("SPD");
-  display.setTextSize(2);
-  display.setCursor(1, 7);
+  display.setTextSize(3);
+  display.setCursor(1, 8);
   display.printf("%3u", hudState.speed);
 
   display.setTextSize(1);
-  display.setCursor(1, 22);
+  display.setCursor(1, 36);
   display.print("REM");
-  display.setCursor(1, 29);
+  display.setTextSize(2);
+  display.setCursor(1, 44);
   display.printf("%3u", hudState.remaining);
+  display.setTextSize(1);
 
-  drawNavigationArrow(69, 32, hudState.navigationAngle);
+  drawNavigationArrow(69, 10, hudState.navigationAngle);
 
-  display.drawLine(0, 45, 86, 45, SSD1306_WHITE);
-  display.setCursor(1, 52);
-  display.printf("AVG %3u", hudState.average);
-  display.setCursor(44, 52);
-  display.printf("TOT %3u", hudState.total);
+  display.setCursor(62, 27);
+  display.print("AVG");
+  display.setCursor(62, 45);
+  display.print("TOT");
+  display.setCursor(62, 35);
+  display.printf("%3u", hudState.average);
+  display.setCursor(62, 53);
+  display.printf("%3u", hudState.total);
 
   display.drawLine(87, 0, 87, 63, SSD1306_WHITE);
   display.drawBitmap(88, 0, mapBitmap, MAP_WIDTH, MAP_HEIGHT, SSD1306_WHITE);
+  display.drawBitmap(88, 0, routeBitmap, MAP_WIDTH, MAP_HEIGHT, SSD1306_WHITE);
   drawAnimatedRoute();
   display.display();
   screenDirty = false;

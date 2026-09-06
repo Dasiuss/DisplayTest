@@ -16,4 +16,4 @@ Compile the sketch for the Waveshare board after checking the exact FQBN reporte
 arduino-cli compile --fqbn esp32:esp32:waveshare_esp32_s3_zero firmware/hud_display
 ```
 
-The sketch logs its firmware version (`v0.2.0`) at boot over native USB CDC at 115200 baud. It uses GPIO1 for SDA, GPIO2 for SCL, and OLED address `0x3C`.
+The sketch logs its firmware version (`v0.4.0`) at boot over native USB CDC at 115200 baud. It uses GPIO1 for SDA, GPIO2 for SCL, and OLED address `0x3C`.

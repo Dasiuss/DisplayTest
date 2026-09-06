@@ -1,6 +1,6 @@
 import './style.css';
 
-const APP_VERSION = 'v0.2.0';
+const APP_VERSION = 'v0.4.0';
 const SERVICE_UUID = '5f8a0001-4e56-4e46-9a7c-000000000001';
 const CHARACTERISTIC_UUID = '5f8a0001-4e56-4e46-9a7c-000000000002';
 const MAP_WIDTH = 40;
@@ -9,7 +9,7 @@ const MAP_ROW_BYTES = Math.ceil(MAP_WIDTH / 8);
 const MAP_BYTES = MAP_ROW_BYTES * MAP_HEIGHT;
 const MAP_CHUNK_BYTES = 16;
 const MAP_SEND_INTERVAL = 100;
-const ROUTE_ANIMATION_INTERVAL = 85;
+const ROUTE_ANIMATION_INTERVAL = 28;
 
 const values = {
   speed: document.querySelector('#speed'),
@@ -100,26 +100,24 @@ function renderOled() {
 
   context.font = '5px monospace';
   context.fillText('SPD', 1, 6);
-  context.font = 'bold 11px monospace';
-  context.fillText(formatNumber(state.speed), 1, 18);
+  context.font = 'bold 15px monospace';
+  context.fillText(formatNumber(state.speed), 1, 29);
 
   context.font = '5px monospace';
-  context.fillText('REM', 1, 28);
-  context.font = 'bold 8px monospace';
-  context.fillText(formatNumber(state.remaining), 1, 39);
+  context.fillText('REM', 1, 38);
+  context.font = 'bold 12px monospace';
+  context.fillText(formatNumber(state.remaining), 1, 55);
 
   context.lineWidth = 1.3;
-  drawArrow(context, 69, 32, state.navigationAngle, 8);
+  drawArrow(context, 69, 10, state.navigationAngle, 8);
 
-  context.strokeStyle = '#9dcfb5';
-  context.beginPath();
-  context.moveTo(0, 45.5);
-  context.lineTo(86, 45.5);
-  context.stroke();
   context.fillStyle = '#d6ffe9';
   context.font = '5px monospace';
-  context.fillText(`AVG ${formatNumber(state.average)}`, 1, 59);
-  context.fillText(`TOT ${formatNumber(state.total)}`, 44, 59);
+  context.fillText('AVG', 62, 32);
+  context.fillText('TOT', 62, 50);
+  context.font = '6px monospace';
+  context.fillText(formatNumber(state.average), 62, 42);
+  context.fillText(formatNumber(state.total), 62, 60);
 
   context.strokeStyle = '#9dcfb5';
   context.beginPath();
@@ -134,9 +132,15 @@ function renderOled() {
     }
   }
   context.fillStyle = '#ffbd70';
+  for (let y = 0; y < MAP_HEIGHT; y += 1) {
+    for (let x = 0; x < MAP_WIDTH; x += 1) {
+      if (layers.route[y * MAP_WIDTH + x]) context.fillRect(88 + x, y, 1, 1);
+    }
+  }
   const routeOrder = getRouteOrder();
   if (routeOrder.length > 0) {
     const routePixel = routeOrder[routeAnimationCursor % routeOrder.length];
+    context.fillStyle = '#020504';
     context.fillRect(88 + (routePixel % MAP_WIDTH), Math.floor(routePixel / MAP_WIDTH), 1, 1);
   }
 }
