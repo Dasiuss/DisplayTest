@@ -15,7 +15,7 @@
           <span class="eyebrow">ESP32-S3 / SSD1306</span>
           <h1>DisplayTest <span>HUD</span></h1>
         </div>
-        <div class="version-tag" id="app-version">v0.1.0</div>
+        <div class="version-tag" id="app-version">v0.2.0</div>
       </header>
 
       <section class="hero-grid">
@@ -70,27 +70,23 @@
           <div class="control-grid">
             <label class="field field-large">
               <span>Predkosc <small>km/h</small></span>
-              <input id="speed" type="number" min="0" max="6553.5" step="0.1" value="23.4" inputmode="decimal" />
-            </label>
-            <label class="field">
-              <span>Heading <small>deg</small></span>
-              <input id="heading" type="number" min="0" max="359" step="1" value="182" inputmode="numeric" />
+              <input id="speed" type="number" min="0" max="65535" step="1" value="23" inputmode="numeric" />
             </label>
             <label class="field field-large">
               <span>Dystans pozostaly <small>km</small></span>
-              <input id="remaining" type="number" min="0" max="6553.5" step="0.1" value="12.8" inputmode="decimal" />
+              <input id="remaining" type="number" min="0" max="65535" step="1" value="13" inputmode="numeric" />
             </label>
             <label class="field">
               <span>Kat nawigacji <small>deg</small></span>
-              <input id="navigation-angle" type="number" min="0" max="359" step="1" value="42" inputmode="numeric" />
+              <input id="navigation-angle" type="number" min="-359" max="359" step="1" value="42" inputmode="numeric" />
             </label>
             <label class="field">
               <span>Predkosc srednia <small>km/h</small></span>
-              <input id="average" type="number" min="0" max="6553.5" step="0.1" value="18.2" inputmode="decimal" />
+              <input id="average" type="number" min="0" max="65535" step="1" value="18" inputmode="numeric" />
             </label>
             <label class="field">
               <span>Dystans calkowity <small>km</small></span>
-              <input id="total" type="number" min="0" max="6553.5" step="0.1" value="42.7" inputmode="decimal" />
+              <input id="total" type="number" min="0" max="65535" step="1" value="43" inputmode="numeric" />
             </label>
           </div>
           <div class="angle-readout">
@@ -99,7 +95,7 @@
               <span class="compass-arrow" id="compass-arrow"></span>
             </div>
             <strong><span id="angle-readout">42</span> deg</strong>
-            <small>0 deg = gora / polnoc</small>
+            <small>0 deg = gora / polnoc; wartosci ujemne obracaja w lewo</small>
           </div>
         </article>
       </section>
@@ -109,17 +105,21 @@
           <div class="panel-heading">
             <div>
               <p class="eyebrow">BITMAP LAYER</p>
-              <h3>Minimapa <span>40 x 40</span></h3>
+              <h3>Minimapa <span>40 x 64</span></h3>
             </div>
-            <span class="map-count" id="map-count">0 px</span>
+            <span class="map-count" id="map-count">MAP 0 / TRASA 0</span>
+          </div>
+          <div class="layer-switch" role="group" aria-label="Aktywna warstwa bitmapy">
+            <button class="layer-button active" id="layer-map" type="button">Mapa</button>
+            <button class="layer-button" id="layer-route" type="button">Trasa</button>
           </div>
           <div class="map-editor-layout">
             <div class="map-canvas-wrap">
-              <canvas id="map-editor" width="40" height="40" aria-label="Edytor bitmapy minimapy"></canvas>
-              <div class="map-scale-label"><span>0</span><span>40 px</span></div>
+              <canvas id="map-editor" width="40" height="64" aria-label="Edytor bitmapy minimapy"></canvas>
+              <div class="map-scale-label"><span>0</span><span>64 px</span></div>
             </div>
             <div class="map-tools">
-              <p>Rysuj po mapie myszka lub palcem. Zmiany sa przesylane do ESP maksymalnie 10 razy na sekunde.</p>
+              <p id="layer-help">Rysuj po mapie myszka lub palcem. Zmiany sa przesylane do ESP maksymalnie 10 razy na sekunde.</p>
               <div class="tool-row">
                 <button class="button button-quiet" id="clear-map" type="button">Wyczysc</button>
                 <button class="button button-quiet" id="invert-map" type="button">Odwroc</button>
@@ -136,6 +136,7 @@
             <div><span>BLE</span><strong>GATT / write NR</strong></div>
             <div><span>I2C</span><strong>SDA 1 / SCL 2</strong></div>
             <div><span>OLED</span><strong>SSD1306 128x64</strong></div>
+            <div><span>MAP</span><strong>40x64 + trasa</strong></div>
             <div><span>SYNC</span><strong>do 10 Hz</strong></div>
           </div>
           <p class="protocol-note">ESP32 renderuje ekran lokalnie. PWA przesyla tylko stan HUD-u i spakowane piksele mapy.</p>
@@ -144,7 +145,7 @@
 
       <footer class="footer-line">
         <span>DisplayTest / Open instrument lab</span>
-        <span>Firmware: <strong>v0.1.0</strong></span>
+        <span>Firmware: <strong>v0.2.0</strong></span>
       </footer>
     </main>
     <script type="module" src="./src/main.js"></script>

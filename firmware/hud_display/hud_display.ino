@@ -6,17 +6,18 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
-static const char *FIRMWARE_VERSION = "v0.1.0";
+static const char *FIRMWARE_VERSION = "v0.2.0";
 static const uint8_t I2C_SDA_PIN = 1;
 static const uint8_t I2C_SCL_PIN = 2;
 static const uint8_t OLED_ADDRESS = 0x3C;
 static const uint8_t SCREEN_WIDTH = 128;
 static const uint8_t SCREEN_HEIGHT = 64;
 static const uint8_t MAP_WIDTH = 40;
-static const uint8_t MAP_HEIGHT = 40;
+static const uint8_t MAP_HEIGHT = 64;
 static const uint8_t MAP_ROW_BYTES = (MAP_WIDTH + 7) / 8;
 static const uint16_t MAP_BYTES = MAP_ROW_BYTES * MAP_HEIGHT;
 static const uint8_t MAP_CHUNK_BYTES = 16;
+static const uint16_t ROUTE_STEP_MS = 85;
 
 static const char *SERVICE_UUID = "5f8a0001-4e56-4e46-9a7c-000000000001";
 static const char *CHARACTERISTIC_UUID = "5f8a0001-4e56-4e46-9a7c-000000000002";
@@ -25,32 +26,44 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 BLECharacteristic *displayCharacteristic = nullptr;
 
 struct HudState {
-  float speed = 23.4f;
-  uint16_t heading = 182;
-  uint16_t navigationAngle = 42;
-  float average = 18.2f;
-  float remaining = 12.8f;
-  float total = 42.7f;
+  uint16_t speed = 23;
+  int16_t navigationAngle = 42;
+  uint16_t average = 18;
+  uint16_t remaining = 13;
+  uint16_t total = 43;
 };
 
 HudState hudState;
 uint8_t mapBitmap[MAP_BYTES] = {};
-uint8_t incomingMap[MAP_BYTES] = {};
-uint16_t incomingMapMask = 0;
-uint8_t incomingMapSequence = 0;
-uint8_t incomingMapChunks = 0;
-bool mapTransferActive = false;
+uint8_t routeBitmap[MAP_BYTES] = {};
+
+struct BitmapTransfer {
+  uint8_t buffer[MAP_BYTES] = {};
+  uint32_t receivedMask = 0;
+  uint8_t sequence = 0;
+  uint8_t chunks = 0;
+  bool active = false;
+};
+
+BitmapTransfer mapTransfer;
+BitmapTransfer routeTransfer;
 bool screenDirty = true;
 bool displayReady = false;
 bool clientConnected = false;
 unsigned long lastRender = 0;
 unsigned long lastStateLog = 0;
+unsigned long lastRouteStep = 0;
+uint16_t routeCursor = 0;
 
 uint16_t readUint16(const uint8_t *data) {
   return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
 }
 
-void drawNavigationArrow(int16_t centerX, int16_t centerY, uint16_t angle) {
+int16_t readInt16(const uint8_t *data) {
+  return static_cast<int16_t>(readUint16(data));
+}
+
+void drawNavigationArrow(int16_t centerX, int16_t centerY, int16_t angle) {
   const float radians = angle * PI / 180.0f;
   const int16_t tipX = centerX + static_cast<int16_t>(sin(radians) * 9.0f);
   const int16_t tipY = centerY - static_cast<int16_t>(cos(radians) * 9.0f);
@@ -64,6 +77,38 @@ void drawNavigationArrow(int16_t centerX, int16_t centerY, uint16_t angle) {
   display.drawLine(tipX, tipY, rightX, rightY, SSD1306_WHITE);
 }
 
+uint16_t countRoutePixels() {
+  uint16_t count = 0;
+  for (uint16_t index = 0; index < MAP_BYTES; index++) {
+    uint8_t bits = routeBitmap[index];
+    while (bits != 0) {
+      count++;
+      bits &= bits - 1;
+    }
+  }
+  return count;
+}
+
+void drawAnimatedRoute() {
+  const uint16_t routePixels = countRoutePixels();
+  if (routePixels == 0) return;
+  if (routeCursor >= routePixels) routeCursor = 0;
+
+  uint16_t current = 0;
+  for (int16_t y = MAP_HEIGHT - 1; y >= 0; y--) {
+    for (uint8_t x = 0; x < MAP_WIDTH; x++) {
+      const uint16_t index = y * MAP_WIDTH + x;
+      if (routeBitmap[(y * MAP_ROW_BYTES) + (x / 8)] & (0x80 >> (x % 8))) {
+        if (current == routeCursor) {
+          display.drawPixel(88 + x, y, SSD1306_WHITE);
+          return;
+        }
+        current++;
+      }
+    }
+  }
+}
+
 void renderHud() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
@@ -73,89 +118,85 @@ void renderHud() {
   display.print("SPD");
   display.setTextSize(2);
   display.setCursor(1, 7);
-  display.printf("%4.1f", hudState.speed);
+  display.printf("%3u", hudState.speed);
 
   display.setTextSize(1);
-  display.setCursor(48, 0);
-  display.print("HDG");
-  display.setCursor(48, 9);
-  display.printf("%03u", hudState.heading);
-
   display.setCursor(1, 22);
   display.print("REM");
-  display.setTextSize(2);
-  display.setCursor(1, 28);
-  display.printf("%4.1f", hudState.remaining);
-  display.setTextSize(1);
-  display.setCursor(32, 37);
-  display.print("km");
+  display.setCursor(1, 29);
+  display.printf("%3u", hudState.remaining);
 
-  drawNavigationArrow(69, 29, hudState.navigationAngle);
+  drawNavigationArrow(69, 32, hudState.navigationAngle);
 
   display.drawLine(0, 45, 86, 45, SSD1306_WHITE);
-  display.setCursor(1, 51);
-  display.printf("A%4.1f", hudState.average);
-  display.setCursor(44, 51);
-  display.printf("T%4.1f", hudState.total);
+  display.setCursor(1, 52);
+  display.printf("AVG %3u", hudState.average);
+  display.setCursor(44, 52);
+  display.printf("TOT %3u", hudState.total);
 
-  display.drawLine(87, 0, 87, 39, SSD1306_WHITE);
+  display.drawLine(87, 0, 87, 63, SSD1306_WHITE);
   display.drawBitmap(88, 0, mapBitmap, MAP_WIDTH, MAP_HEIGHT, SSD1306_WHITE);
+  drawAnimatedRoute();
   display.display();
   screenDirty = false;
   lastRender = millis();
 }
 
 void applyStatePacket(const uint8_t *data, size_t length) {
-  if (length < 14 || data[0] != 'S') return;
+  if (length < 12 || data[0] != 'S') return;
 
-  hudState.speed = readUint16(data + 2) / 10.0f;
-  hudState.heading = readUint16(data + 4) % 360;
-  hudState.navigationAngle = readUint16(data + 6) % 360;
-  hudState.average = readUint16(data + 8) / 10.0f;
-  hudState.remaining = readUint16(data + 10) / 10.0f;
-  hudState.total = readUint16(data + 12) / 10.0f;
+  hudState.speed = readUint16(data + 2);
+  hudState.navigationAngle = readInt16(data + 4);
+  hudState.average = readUint16(data + 6);
+  hudState.remaining = readUint16(data + 8);
+  hudState.total = readUint16(data + 10);
+  if (hudState.navigationAngle < -359) hudState.navigationAngle = -359;
+  if (hudState.navigationAngle > 359) hudState.navigationAngle = 359;
   screenDirty = true;
 
   if (millis() - lastStateLog > 1000) {
-    Serial.printf("[%s] HUD state: speed=%.1f heading=%u nav=%u remaining=%.1f\n",
+    Serial.printf("[%s] HUD state: speed=%u nav=%d remaining=%u\n",
                   FIRMWARE_VERSION,
                   hudState.speed,
-                  hudState.heading,
                   hudState.navigationAngle,
                   hudState.remaining);
     lastStateLog = millis();
   }
 }
 
-void applyMapPacket(const uint8_t *data, size_t length) {
-  if (length < 4 || data[0] != 'M') return;
+void applyBitmapPacket(const uint8_t *data, size_t length) {
+  if (length < 4 || (data[0] != 'M' && data[0] != 'R')) return;
+
+  BitmapTransfer *transfer = data[0] == 'M' ? &mapTransfer : &routeTransfer;
+  uint8_t *target = data[0] == 'M' ? mapBitmap : routeBitmap;
 
   const uint8_t sequence = data[1];
   const uint8_t chunkIndex = data[2];
   const uint8_t chunkCount = data[3];
-  if (chunkCount == 0 || chunkCount > 16 || chunkIndex >= chunkCount) return;
+  if (chunkCount == 0 || chunkCount > 20 || chunkIndex >= chunkCount) return;
 
-  if (!mapTransferActive || sequence != incomingMapSequence || chunkCount != incomingMapChunks) {
-    memset(incomingMap, 0, sizeof(incomingMap));
-    incomingMapMask = 0;
-    incomingMapSequence = sequence;
-    incomingMapChunks = chunkCount;
-    mapTransferActive = true;
+  if (!transfer->active || sequence != transfer->sequence || chunkCount != transfer->chunks) {
+    memset(transfer->buffer, 0, sizeof(transfer->buffer));
+    transfer->receivedMask = 0;
+    transfer->sequence = sequence;
+    transfer->chunks = chunkCount;
+    transfer->active = true;
   }
 
   const uint16_t offset = chunkIndex * MAP_CHUNK_BYTES;
   const uint8_t available = min(static_cast<size_t>(MAP_CHUNK_BYTES), length - 4);
   if (offset < MAP_BYTES) {
-    memcpy(incomingMap + offset, data + 4, min(static_cast<uint16_t>(available), static_cast<uint16_t>(MAP_BYTES - offset)));
+    memcpy(transfer->buffer + offset, data + 4, min(static_cast<uint16_t>(available), static_cast<uint16_t>(MAP_BYTES - offset)));
   }
-  incomingMapMask |= static_cast<uint16_t>(1U << chunkIndex);
+  transfer->receivedMask |= static_cast<uint32_t>(1UL << chunkIndex);
 
-  const uint16_t expectedMask = static_cast<uint16_t>((1U << chunkCount) - 1U);
-  if (incomingMapMask == expectedMask) {
-    memcpy(mapBitmap, incomingMap, MAP_BYTES);
-    mapTransferActive = false;
+  const uint32_t expectedMask = (1UL << chunkCount) - 1UL;
+  if (transfer->receivedMask == expectedMask) {
+    memcpy(target, transfer->buffer, MAP_BYTES);
+    transfer->active = false;
+    if (data[0] == 'R') routeCursor = 0;
     screenDirty = true;
-    Serial.printf("[%s] Map updated: %u chunks\n", FIRMWARE_VERSION, chunkCount);
+    Serial.printf("[%s] %s updated: %u chunks\n", FIRMWARE_VERSION, data[0] == 'M' ? "Map" : "Route", chunkCount);
   }
 }
 
@@ -180,8 +221,8 @@ class DisplayCallbacks : public BLECharacteristicCallbacks {
 
     if (data[0] == 'S') {
       applyStatePacket(data, length);
-    } else if (data[0] == 'M') {
-      applyMapPacket(data, length);
+    } else if (data[0] == 'M' || data[0] == 'R') {
+      applyBitmapPacket(data, length);
     }
   }
 };
@@ -227,6 +268,11 @@ void setup() {
 }
 
 void loop() {
+  if (displayReady && millis() - lastRouteStep >= ROUTE_STEP_MS) {
+    routeCursor++;
+    lastRouteStep = millis();
+    screenDirty = true;
+  }
   if (displayReady && screenDirty && millis() - lastRender >= 10) renderHud();
   delay(1);
 }

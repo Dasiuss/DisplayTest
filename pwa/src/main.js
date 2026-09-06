@@ -1,18 +1,18 @@
 import './style.css';
 
-const APP_VERSION = 'v0.1.0';
+const APP_VERSION = 'v0.2.0';
 const SERVICE_UUID = '5f8a0001-4e56-4e46-9a7c-000000000001';
 const CHARACTERISTIC_UUID = '5f8a0001-4e56-4e46-9a7c-000000000002';
 const MAP_WIDTH = 40;
-const MAP_HEIGHT = 40;
+const MAP_HEIGHT = 64;
 const MAP_ROW_BYTES = Math.ceil(MAP_WIDTH / 8);
 const MAP_BYTES = MAP_ROW_BYTES * MAP_HEIGHT;
 const MAP_CHUNK_BYTES = 16;
 const MAP_SEND_INTERVAL = 100;
+const ROUTE_ANIMATION_INTERVAL = 85;
 
 const values = {
   speed: document.querySelector('#speed'),
-  heading: document.querySelector('#heading'),
   navigationAngle: document.querySelector('#navigation-angle'),
   average: document.querySelector('#average'),
   remaining: document.querySelector('#remaining'),
@@ -23,13 +23,18 @@ const oledCanvas = document.querySelector('#oled-preview');
 const oledContext = oledCanvas.getContext('2d');
 const mapCanvas = document.querySelector('#map-editor');
 const mapContext = mapCanvas.getContext('2d');
-const mapPixels = new Uint8Array(MAP_WIDTH * MAP_HEIGHT);
+const layers = {
+  map: new Uint8Array(MAP_WIDTH * MAP_HEIGHT),
+  route: new Uint8Array(MAP_WIDTH * MAP_HEIGHT),
+};
+const bitmapDirty = { map: false, route: false };
 let device;
 let characteristic;
-let mapSequence = 0;
+const bitmapSequence = { map: 0, route: 0 };
 let stateSequence = 0;
 let mapTimer;
-let mapDirty = false;
+let routeAnimationCursor = 0;
+let activeLayer = 'map';
 let isDrawing = false;
 let lastDrawnPixel = -1;
 let writeQueue = Promise.resolve();
@@ -47,23 +52,21 @@ function numberValue(input, fallback = 0) {
 }
 
 function angleValue(input) {
-  const value = Math.round(numberValue(input));
-  return ((value % 360) + 360) % 360;
+  return clamp(Math.round(numberValue(input)), -359, 359);
 }
 
 function getState() {
   return {
-    speed: clamp(numberValue(values.speed), 0, 6553.5),
-    heading: angleValue(values.heading),
+    speed: clamp(Math.round(numberValue(values.speed)), 0, 65535),
     navigationAngle: angleValue(values.navigationAngle),
-    average: clamp(numberValue(values.average), 0, 6553.5),
-    remaining: clamp(numberValue(values.remaining), 0, 6553.5),
-    total: clamp(numberValue(values.total), 0, 6553.5),
+    average: clamp(Math.round(numberValue(values.average)), 0, 65535),
+    remaining: clamp(Math.round(numberValue(values.remaining)), 0, 65535),
+    total: clamp(Math.round(numberValue(values.total)), 0, 65535),
   };
 }
 
 function formatNumber(value) {
-  return value.toFixed(1).padStart(4, ' ');
+  return String(Math.round(value)).padStart(3, ' ');
 }
 
 function drawArrow(context, centerX, centerY, angle, radius = 7) {
@@ -101,19 +104,12 @@ function renderOled() {
   context.fillText(formatNumber(state.speed), 1, 18);
 
   context.font = '5px monospace';
-  context.fillText('HDG', 48, 6);
-  context.font = '7px monospace';
-  context.fillText(String(state.heading).padStart(3, '0'), 48, 15);
-
-  context.font = '5px monospace';
-  context.fillText('REM', 1, 27);
-  context.font = 'bold 10px monospace';
+  context.fillText('REM', 1, 28);
+  context.font = 'bold 8px monospace';
   context.fillText(formatNumber(state.remaining), 1, 39);
-  context.font = '5px monospace';
-  context.fillText('km', 32, 39);
 
   context.lineWidth = 1.3;
-  drawArrow(context, 69, 31, state.navigationAngle, 8);
+  drawArrow(context, 69, 32, state.navigationAngle, 8);
 
   context.strokeStyle = '#9dcfb5';
   context.beginPath();
@@ -122,20 +118,26 @@ function renderOled() {
   context.stroke();
   context.fillStyle = '#d6ffe9';
   context.font = '5px monospace';
-  context.fillText(`AVG ${formatNumber(state.average)}`, 1, 54);
-  context.fillText(`TOT ${formatNumber(state.total)}`, 44, 54);
+  context.fillText(`AVG ${formatNumber(state.average)}`, 1, 59);
+  context.fillText(`TOT ${formatNumber(state.total)}`, 44, 59);
 
   context.strokeStyle = '#9dcfb5';
   context.beginPath();
   context.moveTo(87.5, 0);
-  context.lineTo(87.5, 40);
+  context.lineTo(87.5, 64);
   context.stroke();
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (mapPixels[y * MAP_WIDTH + x]) {
+      if (layers.map[y * MAP_WIDTH + x]) {
         context.fillRect(88 + x, y, 1, 1);
       }
     }
+  }
+  context.fillStyle = '#ffbd70';
+  const routeOrder = getRouteOrder();
+  if (routeOrder.length > 0) {
+    const routePixel = routeOrder[routeAnimationCursor % routeOrder.length];
+    context.fillRect(88 + (routePixel % MAP_WIDTH), Math.floor(routePixel / MAP_WIDTH), 1, 1);
   }
 }
 
@@ -145,10 +147,14 @@ function drawMapEditor() {
   mapContext.fillStyle = '#b9ffe0';
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (mapPixels[y * MAP_WIDTH + x]) {
+      if (layers.map[y * MAP_WIDTH + x]) {
         mapContext.fillRect(x, y, 1, 1);
       }
     }
+  }
+  mapContext.fillStyle = '#ffbd70';
+  for (let index = 0; index < layers.route.length; index += 1) {
+    if (layers.route[index]) mapContext.fillRect(index % MAP_WIDTH, Math.floor(index / MAP_WIDTH), 1, 1);
   }
   mapContext.strokeStyle = '#4a7e6a';
   mapContext.lineWidth = 0.15;
@@ -157,6 +163,8 @@ function drawMapEditor() {
     mapContext.moveTo(i, 0);
     mapContext.lineTo(i, MAP_HEIGHT);
     mapContext.stroke();
+  }
+  for (let i = 0.5; i < MAP_HEIGHT; i += 1) {
     mapContext.beginPath();
     mapContext.moveTo(0, i);
     mapContext.lineTo(MAP_WIDTH, i);
@@ -166,8 +174,20 @@ function drawMapEditor() {
 }
 
 function updateMapCount() {
-  const count = mapPixels.reduce((sum, pixel) => sum + pixel, 0);
-  document.querySelector('#map-count').textContent = `${count} px`;
+  const mapCount = layers.map.reduce((sum, pixel) => sum + pixel, 0);
+  const routeCount = layers.route.reduce((sum, pixel) => sum + pixel, 0);
+  document.querySelector('#map-count').textContent = `MAP ${mapCount} / TRASA ${routeCount}`;
+}
+
+function getRouteOrder() {
+  const order = [];
+  for (let y = MAP_HEIGHT - 1; y >= 0; y -= 1) {
+    for (let x = 0; x < MAP_WIDTH; x += 1) {
+      const index = y * MAP_WIDTH + x;
+      if (layers.route[index]) order.push(index);
+    }
+  }
+  return order;
 }
 
 function mapPoint(event) {
@@ -183,34 +203,33 @@ function paintMap(event) {
   const index = y * MAP_WIDTH + x;
   if (index === lastDrawnPixel) return;
   lastDrawnPixel = index;
-  mapPixels[index] = 1;
-  mapDirty = true;
+  layers[activeLayer][index] = 1;
+  bitmapDirty[activeLayer] = true;
   drawMapEditor();
   renderOled();
-  scheduleMapSend();
+  scheduleBitmapSend();
 }
 
 function encodeState() {
   const state = getState();
-  const packet = new Uint8Array(15);
+  const packet = new Uint8Array(13);
   const view = new DataView(packet.buffer);
   packet[0] = 0x53;
   packet[1] = stateSequence++ & 0xff;
-  view.setUint16(2, Math.round(state.speed * 10), true);
-  view.setUint16(4, state.heading, true);
-  view.setUint16(6, state.navigationAngle, true);
-  view.setUint16(8, Math.round(state.average * 10), true);
-  view.setUint16(10, Math.round(state.remaining * 10), true);
-  view.setUint16(12, Math.round(state.total * 10), true);
-  packet[14] = 1;
+  view.setUint16(2, state.speed, true);
+  view.setInt16(4, state.navigationAngle, true);
+  view.setUint16(6, state.average, true);
+  view.setUint16(8, state.remaining, true);
+  view.setUint16(10, state.total, true);
+  packet[12] = 1;
   return packet;
 }
 
-function encodeMap() {
+function encodeBitmap(layer) {
   const packed = new Uint8Array(MAP_BYTES);
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (mapPixels[y * MAP_WIDTH + x]) {
+      if (layers[layer][y * MAP_WIDTH + x]) {
         packed[(y * MAP_ROW_BYTES) + Math.floor(x / 8)] |= 0x80 >> (x % 8);
       }
     }
@@ -246,17 +265,17 @@ function sendState() {
   document.querySelector('#sync-label').textContent = 'BLE LIVE';
 }
 
-function sendMap() {
-  if (!characteristic || !mapDirty) return;
-  mapDirty = false;
-  const packed = encodeMap();
-  const sequence = mapSequence++ & 0xff;
+function sendBitmap(layer) {
+  if (!characteristic || !bitmapDirty[layer]) return;
+  bitmapDirty[layer] = false;
+  const packed = encodeBitmap(layer);
+  const sequence = bitmapSequence[layer]++ & 0xff;
   const chunks = Math.ceil(packed.length / MAP_CHUNK_BYTES);
   for (let index = 0; index < chunks; index += 1) {
     const start = index * MAP_CHUNK_BYTES;
     const chunk = packed.slice(start, start + MAP_CHUNK_BYTES);
     const packet = new Uint8Array(4 + MAP_CHUNK_BYTES);
-    packet[0] = 0x4d;
+    packet[0] = layer === 'map' ? 0x4d : 0x52;
     packet[1] = sequence;
     packet[2] = index;
     packet[3] = chunks;
@@ -266,12 +285,17 @@ function sendMap() {
   document.querySelector('#bitmap-status').textContent = `Wyslano / ${queuedWriteCount} pakietow`;
 }
 
-function scheduleMapSend() {
+function sendDirtyBitmaps() {
+  sendBitmap('map');
+  sendBitmap('route');
+}
+
+function scheduleBitmapSend() {
   if (mapTimer) return;
   mapTimer = window.setTimeout(() => {
     mapTimer = undefined;
-    sendMap();
-    if (mapDirty && characteristic) scheduleMapSend();
+    sendDirtyBitmaps();
+    if ((bitmapDirty.map || bitmapDirty.route) && characteristic) scheduleBitmapSend();
   }, MAP_SEND_INTERVAL);
 }
 
@@ -305,8 +329,9 @@ async function connectBluetooth() {
     characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
     setConnectionState('Polaczono', `${device.name || 'HUD ESP32-S3'} / transmisja aktywna`, true);
     sendState();
-    mapDirty = true;
-    sendMap();
+    bitmapDirty.map = true;
+    bitmapDirty.route = true;
+    sendDirtyBitmaps();
   } catch (error) {
     characteristic = undefined;
     if (error.name !== 'NotFoundError') {
@@ -334,19 +359,21 @@ function onValueInput() {
 }
 
 function clearMap() {
-  mapPixels.fill(0);
-  mapDirty = true;
+  layers[activeLayer].fill(0);
+  bitmapDirty[activeLayer] = true;
   drawMapEditor();
   renderOled();
-  scheduleMapSend();
+  scheduleBitmapSend();
 }
 
 function invertMap() {
-  for (let index = 0; index < mapPixels.length; index += 1) mapPixels[index] = mapPixels[index] ? 0 : 1;
-  mapDirty = true;
+  for (let index = 0; index < layers[activeLayer].length; index += 1) {
+    layers[activeLayer][index] = layers[activeLayer][index] ? 0 : 1;
+  }
+  bitmapDirty[activeLayer] = true;
   drawMapEditor();
   renderOled();
-  scheduleMapSend();
+  scheduleBitmapSend();
 }
 
 document.querySelector('#connect-button').addEventListener('click', connectBluetooth);
@@ -368,17 +395,41 @@ mapCanvas.addEventListener('pointermove', (event) => {
 mapCanvas.addEventListener('pointerup', () => {
   isDrawing = false;
   lastDrawnPixel = -1;
-  if (mapDirty) sendMap();
+  sendDirtyBitmaps();
 });
 mapCanvas.addEventListener('pointercancel', () => {
   isDrawing = false;
   lastDrawnPixel = -1;
 });
 
+function setActiveLayer(layer) {
+  activeLayer = layer;
+  document.querySelector('#layer-map').classList.toggle('active', layer === 'map');
+  document.querySelector('#layer-route').classList.toggle('active', layer === 'route');
+  document.querySelector('#layer-help').textContent = layer === 'route'
+    ? 'Rysuj aktualna trase. Na OLED porusza sie po niej jeden punkt, od dolu do gory, wierszami.'
+    : 'Rysuj stale tlo minimapy myszka lub palcem. Trasa jest osobna warstwa.';
+}
+
+function animateRoute() {
+  const routeLength = getRouteOrder().length;
+  if (routeLength === 0) {
+    routeAnimationCursor = 0;
+    return;
+  }
+  routeAnimationCursor = (routeAnimationCursor + 1) % routeLength;
+  renderOled();
+}
+
+document.querySelector('#layer-map').addEventListener('click', () => setActiveLayer('map'));
+document.querySelector('#layer-route').addEventListener('click', () => setActiveLayer('route'));
+
 setConnectionState('Niepolaczono', 'Wybierz ESP32-S3, aby rozpocząć transmisję.', false);
+setActiveLayer('map');
 updateArrowReadout();
 drawMapEditor();
 renderOled();
+window.setInterval(animateRoute, ROUTE_ANIMATION_INTERVAL);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => undefined);

@@ -101,9 +101,12 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .compass-arrow::after { right: -2px; transform: rotate(36deg); }
 
 .map-panel { min-height: 280px; }
-.map-editor-layout { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 22px; align-items: center; }
-.map-canvas-wrap { width: min(100%, 280px); }
-#map-editor { display: block; width: 100%; height: auto; aspect-ratio: 1; border: 1px solid #3e775c; background: #050b09; image-rendering: pixelated; touch-action: none; cursor: crosshair; }
+.layer-switch { display: flex; gap: 6px; margin: -3px 0 17px; }
+.layer-button { border: 1px solid #315b49; border-radius: 2px; padding: 7px 12px; background: transparent; color: var(--muted); font-size: 0.65rem; font-weight: 700; }
+.layer-button:hover, .layer-button.active { border-color: var(--orange); background: rgba(255, 189, 112, 0.09); color: var(--orange); }
+.map-editor-layout { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 22px; align-items: center; }
+.map-canvas-wrap { width: min(100%, 220px); }
+#map-editor { display: block; width: 100%; height: auto; aspect-ratio: 40 / 64; border: 1px solid #3e775c; background: #050b09; image-rendering: pixelated; touch-action: none; cursor: crosshair; }
 .map-scale-label { margin-top: 5px; color: #527766; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.56rem; }
 .map-tools p { max-width: 265px; margin: 0 0 17px; color: var(--muted); font-size: 0.75rem; line-height: 1.5; }
 .tool-row { display: flex; gap: 7px; }
@@ -124,13 +127,13 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   .hero-grid { gap: 24px; padding: 40px 0 28px; }
   .intro-copy h2 { font-size: clamp(2.9rem, 14vw, 4.5rem); }
   .connection-card { max-width: none; }
-  .map-editor-layout { grid-template-columns: minmax(0, 280px) 1fr; }
+  .map-editor-layout { grid-template-columns: minmax(0, 220px) 1fr; }
 }
 
 @media (max-width: 500px) {
   .control-grid { grid-template-columns: 1fr; }
   .map-editor-layout { grid-template-columns: 1fr; }
-  .map-canvas-wrap { width: min(100%, 300px); margin: 0 auto; }
+  .map-canvas-wrap { width: min(100%, 220px); margin: 0 auto; }
   .map-tools { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
   .map-tools p { grid-column: 1 / -1; }
   .bitmap-status { margin-top: 0; }
