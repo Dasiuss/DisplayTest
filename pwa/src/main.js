@@ -1,6 +1,6 @@
 import './style.css';
 
-const APP_VERSION = 'v0.6.0';
+const APP_VERSION = 'v0.7.0';
 const SERVICE_UUID = '5f8a0001-4e56-4e46-9a7c-000000000001';
 const CHARACTERISTIC_UUID = '5f8a0001-4e56-4e46-9a7c-000000000002';
 const MAP_WIDTH = 40;
@@ -101,10 +101,10 @@ function renderOled() {
   context.font = '5px monospace';
   context.fillText('SPD', 1, 6);
   context.font = 'bold 15px monospace';
-  context.fillText(formatNumber(state.speed), 1, 29);
+  context.fillText(formatNumber(state.speed), 1, 30);
 
   context.font = '5px monospace';
-  context.fillText('REM', 1, 38);
+  context.fillText('REM', 1, 39);
   context.font = 'bold 12px monospace';
   context.fillText(formatNumber(state.remaining), 1, 63);
 
@@ -113,8 +113,8 @@ function renderOled() {
 
   context.fillStyle = '#d6ffe9';
   context.font = '5px monospace';
-  context.fillText('AVG', 62, 32);
-  context.fillText('TOT', 62, 50);
+  context.fillText('MAX', 62, 32);
+  context.fillText('TOTAL', 62, 55);
   context.font = '6px monospace';
   context.fillText(formatNumber(state.average), 62, 42);
   context.fillText(formatNumber(state.total), 62, 63);

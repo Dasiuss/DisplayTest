@@ -6,7 +6,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
-static const char *FIRMWARE_VERSION = "v0.6.0";
+static const char *FIRMWARE_VERSION = "v0.7.0";
 static const uint8_t I2C_SDA_PIN = 1;
 static const uint8_t I2C_SCL_PIN = 2;
 static const uint8_t OLED_ADDRESS = 0x3C;
@@ -134,11 +134,11 @@ void renderHud() {
   display.setCursor(1, 0);
   display.print("SPD");
   display.setTextSize(3);
-  display.setCursor(1, 8);
+  display.setCursor(1, 9);
   display.printf("%3u", hudState.speed);
 
   display.setTextSize(1);
-  display.setCursor(1, 36);
+  display.setCursor(1, 37);
   display.print("REM");
   display.setTextSize(2);
   display.setCursor(1, 48);
@@ -148,9 +148,9 @@ void renderHud() {
   drawNavigationArrow(69, 10, hudState.navigationAngle);
 
   display.setCursor(62, 27);
-  display.print("AVG");
-  display.setCursor(62, 45);
-  display.print("TOT");
+  display.print("MAX");
+  display.setCursor(62, 48);
+  display.print("TOTAL");
   display.setCursor(62, 35);
   display.printf("%3u", hudState.average);
   display.setCursor(62, 56);

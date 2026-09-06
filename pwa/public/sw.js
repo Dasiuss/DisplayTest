@@ -1,4 +1,4 @@
-const CACHE_NAME = 'displaytest-hud-v0.6.0';
+const CACHE_NAME = 'displaytest-hud-v0.7.0';
 const APP_SHELL = './';
 
 self.addEventListener('install', (event) => {
