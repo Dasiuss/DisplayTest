@@ -1,6 +1,6 @@
 import './style.css';
 
-const APP_VERSION = 'v0.4.0';
+const APP_VERSION = 'v0.5.0';
 const SERVICE_UUID = '5f8a0001-4e56-4e46-9a7c-000000000001';
 const CHARACTERISTIC_UUID = '5f8a0001-4e56-4e46-9a7c-000000000002';
 const MAP_WIDTH = 40;
@@ -139,9 +139,12 @@ function renderOled() {
   }
   const routeOrder = getRouteOrder();
   if (routeOrder.length > 0) {
-    const routePixel = routeOrder[routeAnimationCursor % routeOrder.length];
     context.fillStyle = '#020504';
-    context.fillRect(88 + (routePixel % MAP_WIDTH), Math.floor(routePixel / MAP_WIDTH), 1, 1);
+    const gapLength = Math.min(5, routeOrder.length);
+    for (let offset = 0; offset < gapLength; offset += 1) {
+      const routePixel = routeOrder[(routeAnimationCursor + offset) % routeOrder.length];
+      context.fillRect(88 + (routePixel % MAP_WIDTH), Math.floor(routePixel / MAP_WIDTH), 1, 1);
+    }
   }
 }
 

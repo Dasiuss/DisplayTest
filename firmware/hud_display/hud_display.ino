@@ -6,7 +6,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
-static const char *FIRMWARE_VERSION = "v0.4.0";
+static const char *FIRMWARE_VERSION = "v0.5.0";
 static const uint8_t I2C_SDA_PIN = 1;
 static const uint8_t I2C_SCL_PIN = 2;
 static const uint8_t OLED_ADDRESS = 0x3C;
@@ -94,14 +94,15 @@ void drawAnimatedRoute() {
   if (routePixels == 0) return;
   if (routeCursor >= routePixels) routeCursor = 0;
 
+  const uint16_t gapLength = min(static_cast<uint16_t>(5), routePixels);
   uint16_t current = 0;
   for (int16_t y = MAP_HEIGHT - 1; y >= 0; y--) {
     for (uint8_t x = 0; x < MAP_WIDTH; x++) {
       const uint16_t index = y * MAP_WIDTH + x;
       if (routeBitmap[(y * MAP_ROW_BYTES) + (x / 8)] & (0x80 >> (x % 8))) {
-        if (current == routeCursor) {
+        const uint16_t distanceFromGap = (current + routePixels - routeCursor) % routePixels;
+        if (distanceFromGap < gapLength) {
           display.drawPixel(88 + x, y, SSD1306_BLACK);
-          return;
         }
         current++;
       }
