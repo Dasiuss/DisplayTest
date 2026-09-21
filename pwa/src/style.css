@@ -78,7 +78,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .sync-label { padding-top: 4px; color: var(--orange); }
 .oled-frame { max-width: 520px; margin: 0 auto; padding: 20px 20px 13px; border: 1px solid #27493a; background: #060c0a; }
 .oled-glass { padding: 10px; border: 1px solid #1c362b; background: #010302; box-shadow: inset 0 0 18px rgba(114, 241, 184, 0.04), 0 0 20px rgba(114, 241, 184, 0.05); }
-#oled-preview { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; image-rendering: pixelated; }
+#oled-preview { display: block; width: 100%; height: auto; aspect-ratio: 72 / 40; image-rendering: pixelated; }
 .screen-meta { margin-top: 12px; color: #557667; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.58rem; }
 .preview-footnote { justify-content: flex-start; gap: 7px; margin-top: 15px; color: var(--muted); font-size: 0.7rem; }
 .pixel-key { display: inline-block; width: 8px; height: 8px; border: 1px solid var(--mint); background: var(--mint); box-shadow: 0 0 8px rgba(114, 241, 184, 0.45); }

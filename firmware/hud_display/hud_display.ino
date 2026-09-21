@@ -10,8 +10,22 @@ static const char *FIRMWARE_VERSION = "v0.7.0";
 static const uint8_t I2C_SDA_PIN = 1;
 static const uint8_t I2C_SCL_PIN = 2;
 static const uint8_t OLED_ADDRESS = 0x3C;
+// Set to 1 for the 72x40 test panel, 0 for the original 128x64 SSD1306.
+#define DISPLAY_72X40 1
+
+#if DISPLAY_72X40
+static const uint8_t SCREEN_WIDTH = 72;
+static const uint8_t SCREEN_HEIGHT = 40;
+// The 0.42" 72x40 SSD1306 glass maps SEG0 to GDDRAM column 28.
+static const uint8_t OLED_COLUMN_OFFSET = 28;
+static const bool MAP_ENABLED = false;
+#else
 static const uint8_t SCREEN_WIDTH = 128;
 static const uint8_t SCREEN_HEIGHT = 64;
+static const uint8_t OLED_COLUMN_OFFSET = 0;
+static const bool MAP_ENABLED = true;
+#endif
+
 static const uint8_t MAP_WIDTH = 40;
 static const uint8_t MAP_HEIGHT = 64;
 static const uint8_t MAP_ROW_BYTES = (MAP_WIDTH + 7) / 8;
@@ -126,11 +140,51 @@ void drawAnimatedRoute() {
   }
 }
 
+void pushDisplay() {
+  display.ssd1306_command(SSD1306_COLUMNADDR);
+  display.ssd1306_command(OLED_COLUMN_OFFSET);
+  display.ssd1306_command(OLED_COLUMN_OFFSET + SCREEN_WIDTH - 1);
+  display.ssd1306_command(SSD1306_PAGEADDR);
+  display.ssd1306_command(0);
+  display.ssd1306_command((SCREEN_HEIGHT / 8) - 1);
+
+  const uint16_t total = SCREEN_WIDTH * ((SCREEN_HEIGHT + 7) / 8);
+  const uint8_t *ptr = display.getBuffer();
+  const uint16_t chunkSize = 128;
+  uint16_t remaining = total;
+  while (remaining > 0) {
+    const uint16_t batch = min(remaining, chunkSize);
+    Wire.beginTransmission(OLED_ADDRESS);
+    Wire.write(static_cast<uint8_t>(0x40));
+    Wire.write(ptr, batch);
+    Wire.endTransmission();
+    ptr += batch;
+    remaining -= batch;
+  }
+}
+
 void renderHud() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
 
+#if DISPLAY_72X40
+  display.setCursor(3, 7);
+  display.print("SPD");
+  display.setTextSize(2);
+  display.setCursor(32, 3);
+  display.printf("%3u", hudState.speed);
+
+  display.setTextSize(1);
+  display.setCursor(3, 25);
+  display.print("REM");
+  display.setTextSize(2);
+  display.setCursor(32, 21);
+  display.printf("%3u", hudState.remaining);
+  display.setTextSize(1);
+
+  display.drawRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
+#else
   display.setCursor(1, 0);
   display.print("SPD");
   display.setTextSize(3);
@@ -149,7 +203,7 @@ void renderHud() {
 
   display.setCursor(62, 27);
   display.print("MAX");
-  display.setCursor(62, 48);
+  display.setCursor(50, 48);
   display.print("TOTAL");
   display.setCursor(62, 35);
   display.printf("%3u", hudState.average);
@@ -160,7 +214,9 @@ void renderHud() {
   display.drawBitmap(88, 0, mapBitmap, MAP_WIDTH, MAP_HEIGHT, SSD1306_WHITE);
   display.drawBitmap(88, 0, routeBitmap, MAP_WIDTH, MAP_HEIGHT, SSD1306_WHITE);
   drawAnimatedRoute();
-  display.display();
+#endif
+
+  pushDisplay();
   screenDirty = false;
   lastRender = millis();
 }
@@ -279,11 +335,27 @@ void setup() {
   Serial.printf("I2C: SDA=GPIO%u SCL=GPIO%u address=0x%02X\n", I2C_SDA_PIN, I2C_SCL_PIN, OLED_ADDRESS);
 
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, 400000);
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS, false, false)) {
     Serial.printf("[%s] ERROR: SSD1306 not found at 0x%02X\n", FIRMWARE_VERSION, OLED_ADDRESS);
   } else {
     displayReady = true;
+#if DISPLAY_72X40
+    // 0.42" 72x40 panel overrides on top of the Adafruit_SSD1306 init.
+    display.ssd1306_command(0xAD); // internal IREF setting
+    display.ssd1306_command(0x30);
+    display.ssd1306_command(SSD1306_SETCOMPINS);
+    display.ssd1306_command(0x12);
+    display.ssd1306_command(SSD1306_SETCONTRAST);
+    display.ssd1306_command(0xAF);
+    display.ssd1306_command(SSD1306_SETPRECHARGE);
+    display.ssd1306_command(0x22);
+    display.ssd1306_command(SSD1306_SETVCOMDETECT);
+    display.ssd1306_command(0x20);
+    display.ssd1306_command(SSD1306_DISPLAYON);
+    Serial.printf("[%s] 72x40 panel initialized (column offset %u)\n", FIRMWARE_VERSION, OLED_COLUMN_OFFSET);
+#else
     Serial.printf("[%s] SSD1306 initialized\n", FIRMWARE_VERSION);
+#endif
     renderHud();
   }
 
@@ -291,7 +363,7 @@ void setup() {
 }
 
 void loop() {
-  if (displayReady && millis() - lastRouteStep >= ROUTE_STEP_MS) {
+  if (displayReady && MAP_ENABLED && millis() - lastRouteStep >= ROUTE_STEP_MS) {
     routeCursor++;
     lastRouteStep = millis();
     screenDirty = true;

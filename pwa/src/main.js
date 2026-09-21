@@ -3,6 +3,9 @@ import './style.css';
 const APP_VERSION = 'v0.7.0';
 const SERVICE_UUID = '5f8a0001-4e56-4e46-9a7c-000000000001';
 const CHARACTERISTIC_UUID = '5f8a0001-4e56-4e46-9a7c-000000000002';
+const SCREEN_WIDTH = 72;
+const SCREEN_HEIGHT = 40;
+const SHOW_MAP = false;
 const MAP_WIDTH = 40;
 const MAP_HEIGHT = 64;
 const MAP_ROW_BYTES = Math.ceil(MAP_WIDTH / 8);
@@ -92,64 +95,23 @@ function renderOled() {
   const state = getState();
   const context = oledContext;
   context.fillStyle = '#020504';
-  context.fillRect(0, 0, 128, 64);
+  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
   context.fillStyle = '#d6ffe9';
   context.strokeStyle = '#d6ffe9';
   context.lineWidth = 1;
   context.textBaseline = 'alphabetic';
 
-  context.font = '5px monospace';
-  context.fillText('SPD', 1, 6);
-  context.font = 'bold 15px monospace';
-  context.fillText(formatNumber(state.speed), 1, 30);
-
-  context.font = '5px monospace';
-  context.fillText('REM', 1, 39);
-  context.font = 'bold 12px monospace';
-  context.fillText(formatNumber(state.remaining), 1, 63);
-
-  context.lineWidth = 1.3;
-  drawArrow(context, 69, 10, state.navigationAngle, 8);
-
-  context.fillStyle = '#d6ffe9';
-  context.font = '5px monospace';
-  context.fillText('MAX', 62, 32);
-  context.fillText('TOTAL', 62, 55);
   context.font = '6px monospace';
-  context.fillText(formatNumber(state.average), 62, 42);
-  context.fillText(formatNumber(state.total), 62, 63);
+  context.fillText('SPD', 3, 14);
+  context.font = 'bold 14px monospace';
+  context.fillText(formatNumber(state.speed), 32, 17);
 
-  context.strokeStyle = '#9dcfb5';
-  context.beginPath();
-  context.moveTo(87.5, 0);
-  context.lineTo(87.5, 64);
-  context.stroke();
-  for (let y = 0; y < MAP_HEIGHT; y += 1) {
-    for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (layers.map[y * MAP_WIDTH + x]) {
-        context.fillRect(88 + x, y, 1, 1);
-      }
-    }
-  }
-  context.fillStyle = '#ffbd70';
-  for (let y = 0; y < MAP_HEIGHT; y += 1) {
-    for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (layers.route[y * MAP_WIDTH + x]) context.fillRect(88 + x, y, 1, 1);
-    }
-  }
-  const routeOrder = getRouteOrder();
-  if (routeOrder.length > 0) {
-    context.fillStyle = '#020504';
-    const gapLength = 5;
-    const gapCount = getRouteGapCount(routeOrder.length);
-    for (let gapIndex = 0; gapIndex < gapCount; gapIndex += 1) {
-      const gapStart = (routeAnimationCursor + Math.floor((gapIndex * routeOrder.length) / gapCount)) % routeOrder.length;
-      for (let offset = 0; offset < gapLength; offset += 1) {
-        const routePixel = routeOrder[(gapStart + offset) % routeOrder.length];
-        context.fillRect(88 + (routePixel % MAP_WIDTH), Math.floor(routePixel / MAP_WIDTH), 1, 1);
-      }
-    }
-  }
+  context.font = '6px monospace';
+  context.fillText('REM', 3, 32);
+  context.font = 'bold 14px monospace';
+  context.fillText(formatNumber(state.remaining), 32, 35);
+
+  context.strokeRect(0.5, 0.5, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
 }
 
 function drawMapEditor() {
@@ -430,6 +392,7 @@ function setActiveLayer(layer) {
 }
 
 function animateRoute() {
+  if (!SHOW_MAP) return;
   const routeLength = getRouteOrder().length;
   if (routeLength === 0) {
     routeAnimationCursor = 0;
