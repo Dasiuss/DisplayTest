@@ -91,6 +91,9 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .field input { width: 100%; margin-top: 7px; border: 0; outline: 0; background: transparent; color: var(--mint-soft); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 1.2rem; }
 .field input::-webkit-inner-spin-button, .field input::-webkit-outer-spin-button { opacity: 0.5; }
 .angle-readout { display: grid; grid-template-columns: 1fr 38px auto; gap: 10px; align-items: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.7rem; }
+.toggle-row { margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); }
+.toggle { display: inline-flex; align-items: center; gap: 9px; color: var(--mint-soft); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.toggle input { width: 16px; height: 16px; accent-color: var(--mint); cursor: pointer; }
 .angle-readout strong { color: var(--orange); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.8rem; white-space: nowrap; }
 .angle-readout small { grid-column: 1 / -1; color: #527766; }
 .compass-arrow-wrap { position: relative; width: 38px; height: 38px; border: 1px solid #315b49; border-radius: 50%; }

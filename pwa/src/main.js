@@ -24,6 +24,7 @@ const values = {
 
 const oledCanvas = document.querySelector('#oled-preview');
 const oledContext = oledCanvas.getContext('2d');
+const frameToggle = document.querySelector('#frame-toggle');
 const mapCanvas = document.querySelector('#map-editor');
 const mapContext = mapCanvas.getContext('2d');
 const layers = {
@@ -65,6 +66,7 @@ function getState() {
     average: clamp(Math.round(numberValue(values.average)), 0, 65535),
     remaining: clamp(Math.round(numberValue(values.remaining)), 0, 65535),
     total: clamp(Math.round(numberValue(values.total)), 0, 65535),
+    frameEnabled: frameToggle.checked,
   };
 }
 
@@ -117,8 +119,10 @@ function renderOled() {
   context.lineWidth = 1.3;
   drawArrow(context, 63, 9, state.navigationAngle, 6);
 
-  context.lineWidth = 1;
-  context.strokeRect(0.5, 0.5, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+  if (state.frameEnabled) {
+    context.lineWidth = 1;
+    context.strokeRect(0.5, 0.5, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+  }
 }
 
 function drawMapEditor() {
@@ -208,7 +212,7 @@ function encodeState() {
   view.setUint16(6, state.average, true);
   view.setUint16(8, state.remaining, true);
   view.setUint16(10, state.total, true);
-  packet[12] = 1;
+  packet[12] = state.frameEnabled ? 1 : 0;
   return packet;
 }
 
@@ -368,6 +372,7 @@ document.querySelector('#disconnect-button').addEventListener('click', disconnec
 document.querySelector('#clear-map').addEventListener('click', clearMap);
 document.querySelector('#invert-map').addEventListener('click', invertMap);
 Object.values(values).forEach((input) => input.addEventListener('input', onValueInput));
+frameToggle.addEventListener('change', onValueInput);
 
 mapCanvas.addEventListener('pointerdown', (event) => {
   event.preventDefault();

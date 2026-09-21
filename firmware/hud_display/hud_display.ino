@@ -46,6 +46,7 @@ struct HudState {
   uint16_t average = 18;
   uint16_t remaining = 13;
   uint16_t total = 43;
+  bool frameEnabled = true;
 };
 
 HudState hudState;
@@ -199,7 +200,9 @@ void renderHud() {
   display.setTextSize(1);
 
   drawNavigationArrow(63, 9, hudState.navigationAngle, 6.0f, 4.0f);
-  display.drawRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
+  if (hudState.frameEnabled) {
+    display.drawRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
+  }
 #else
   display.setCursor(1, 0);
   display.print("SPD");
@@ -245,6 +248,7 @@ void applyStatePacket(const uint8_t *data, size_t length) {
   hudState.average = readUint16(data + 6);
   hudState.remaining = readUint16(data + 8);
   hudState.total = readUint16(data + 10);
+  if (length >= 13) hudState.frameEnabled = (data[12] & 0x01) != 0;
   if (hudState.navigationAngle < -359) hudState.navigationAngle = -359;
   if (hudState.navigationAngle > 359) hudState.navigationAngle = 359;
   screenDirty = true;
