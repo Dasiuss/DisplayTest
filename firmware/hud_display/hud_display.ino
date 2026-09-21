@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Fonts/TomThumb.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -169,17 +170,27 @@ void renderHud() {
   display.setTextSize(1);
 
 #if DISPLAY_72X40
-  display.setCursor(3, 7);
+  display.setFont(&TomThumb);
+  display.setCursor(3, 11);
   display.print("SPD");
-  display.setTextSize(2);
-  display.setCursor(32, 3);
-  display.printf("%3u", hudState.speed);
-
-  display.setTextSize(1);
-  display.setCursor(3, 25);
+  display.setCursor(3, 27);
   display.print("REM");
+
+  char navLine[16];
+  snprintf(navLine, sizeof(navLine), "NAV %d", hudState.navigationAngle);
+  int16_t boundX = 0;
+  int16_t boundY = 0;
+  uint16_t boundW = 0;
+  uint16_t boundH = 0;
+  display.getTextBounds(navLine, 0, 0, &boundX, &boundY, &boundW, &boundH);
+  display.setCursor((SCREEN_WIDTH - static_cast<int16_t>(boundW)) / 2, 38);
+  display.print(navLine);
+
+  display.setFont();
   display.setTextSize(2);
-  display.setCursor(32, 21);
+  display.setCursor(33, 1);
+  display.printf("%3u", hudState.speed);
+  display.setCursor(33, 17);
   display.printf("%3u", hudState.remaining);
   display.setTextSize(1);
 
