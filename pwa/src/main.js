@@ -105,16 +105,19 @@ function renderOled() {
   context.font = '5px monospace';
   context.fillText('SPD', 3, 11);
   context.fillText('REM', 3, 27);
-
-  context.font = 'bold 15px monospace';
-  context.fillText(formatNumber(state.speed), 33, 15);
-  context.fillText(formatNumber(state.remaining), 33, 31);
-
-  context.textAlign = 'center';
-  context.font = '5px monospace';
-  context.fillText(`NAV ${state.navigationAngle}`, SCREEN_WIDTH / 2, 38);
+  context.fillText(`MAX ${formatNumber(state.average)}`, 3, 38);
+  context.textAlign = 'right';
+  context.fillText(`TOT ${formatNumber(state.total)}`, 69, 38);
   context.textAlign = 'left';
 
+  context.font = 'bold 15px monospace';
+  context.fillText(formatNumber(state.speed), 20, 15);
+  context.fillText(formatNumber(state.remaining), 20, 31);
+
+  context.lineWidth = 1.3;
+  drawArrow(context, 63, 9, state.navigationAngle, 6);
+
+  context.lineWidth = 1;
   context.strokeRect(0.5, 0.5, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
 }
 

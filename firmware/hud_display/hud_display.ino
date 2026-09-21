@@ -78,14 +78,14 @@ int16_t readInt16(const uint8_t *data) {
   return static_cast<int16_t>(readUint16(data));
 }
 
-void drawNavigationArrow(int16_t centerX, int16_t centerY, int16_t angle) {
+void drawNavigationArrow(int16_t centerX, int16_t centerY, int16_t angle, float tipLength, float baseLength) {
   const float radians = angle * PI / 180.0f;
-  const int16_t tipX = centerX + static_cast<int16_t>(sin(radians) * 9.0f);
-  const int16_t tipY = centerY - static_cast<int16_t>(cos(radians) * 9.0f);
-  const int16_t leftX = centerX + static_cast<int16_t>(sin(radians + 2.45f) * 6.0f);
-  const int16_t leftY = centerY - static_cast<int16_t>(cos(radians + 2.45f) * 6.0f);
-  const int16_t rightX = centerX + static_cast<int16_t>(sin(radians - 2.45f) * 6.0f);
-  const int16_t rightY = centerY - static_cast<int16_t>(cos(radians - 2.45f) * 6.0f);
+  const int16_t tipX = centerX + static_cast<int16_t>(sin(radians) * tipLength);
+  const int16_t tipY = centerY - static_cast<int16_t>(cos(radians) * tipLength);
+  const int16_t leftX = centerX + static_cast<int16_t>(sin(radians + 2.45f) * baseLength);
+  const int16_t leftY = centerY - static_cast<int16_t>(cos(radians + 2.45f) * baseLength);
+  const int16_t rightX = centerX + static_cast<int16_t>(sin(radians - 2.45f) * baseLength);
+  const int16_t rightY = centerY - static_cast<int16_t>(cos(radians - 2.45f) * baseLength);
 
   display.drawLine(centerX, centerY, tipX, tipY, SSD1306_WHITE);
   display.drawLine(tipX, tipY, leftX, leftY, SSD1306_WHITE);
@@ -176,24 +176,29 @@ void renderHud() {
   display.setCursor(3, 27);
   display.print("REM");
 
-  char navLine[16];
-  snprintf(navLine, sizeof(navLine), "NAV %d", hudState.navigationAngle);
+  char averageLine[12];
+  char totalLine[12];
+  snprintf(averageLine, sizeof(averageLine), "MAX %3u", hudState.average);
+  snprintf(totalLine, sizeof(totalLine), "TOT %3u", hudState.total);
+  display.setCursor(3, 38);
+  display.print(averageLine);
   int16_t boundX = 0;
   int16_t boundY = 0;
   uint16_t boundW = 0;
   uint16_t boundH = 0;
-  display.getTextBounds(navLine, 0, 0, &boundX, &boundY, &boundW, &boundH);
-  display.setCursor((SCREEN_WIDTH - static_cast<int16_t>(boundW)) / 2, 38);
-  display.print(navLine);
+  display.getTextBounds(totalLine, 0, 0, &boundX, &boundY, &boundW, &boundH);
+  display.setCursor(69 - static_cast<int16_t>(boundW), 38);
+  display.print(totalLine);
 
   display.setFont();
   display.setTextSize(2);
-  display.setCursor(33, 1);
+  display.setCursor(20, 1);
   display.printf("%3u", hudState.speed);
-  display.setCursor(33, 17);
+  display.setCursor(20, 17);
   display.printf("%3u", hudState.remaining);
   display.setTextSize(1);
 
+  drawNavigationArrow(63, 9, hudState.navigationAngle, 6.0f, 4.0f);
   display.drawRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
 #else
   display.setCursor(1, 0);
@@ -210,7 +215,7 @@ void renderHud() {
   display.printf("%3u", hudState.remaining);
   display.setTextSize(1);
 
-  drawNavigationArrow(69, 10, hudState.navigationAngle);
+  drawNavigationArrow(69, 10, hudState.navigationAngle, 9.0f, 6.0f);
 
   display.setCursor(62, 27);
   display.print("MAX");
