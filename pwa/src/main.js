@@ -1,4 +1,6 @@
 import './style.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 const APP_VERSION = 'v0.7.0';
 const SERVICE_UUID = '5f8a0001-4e56-4e46-9a7c-000000000001';
@@ -13,6 +15,10 @@ const MAP_BYTES = MAP_ROW_BYTES * MAP_HEIGHT;
 const MAP_CHUNK_BYTES = 16;
 const MAP_SEND_INTERVAL = 100;
 const ROUTE_ANIMATION_INTERVAL = 28;
+const SOLDEN_CENTER = [46.9667, 11.0083];
+const SOLDEN_ZOOM = 14;
+const MODE_STATS = 0;
+const MODE_MAP = 1;
 
 const values = {
   speed: document.querySelector('#speed'),
@@ -43,6 +49,16 @@ let isDrawing = false;
 let lastDrawnPixel = -1;
 let writeQueue = Promise.resolve();
 let queuedWriteCount = 0;
+
+let displayMode = MODE_STATS;
+let geoSequence = 0;
+let geoLatE7 = 0;
+let geoLonE7 = 0;
+let geoHeading = -1;
+let geoValid = false;
+let mapPicker;
+let positionMarker;
+let geoWatchId;
 
 document.querySelector('#app-version').textContent = APP_VERSION;
 
@@ -256,6 +272,86 @@ function sendState() {
   document.querySelector('#sync-label').textContent = 'BLE LIVE';
 }
 
+function encodeGeo() {
+  const packet = new Uint8Array(13);
+  const view = new DataView(packet.buffer);
+  packet[0] = 0x47;
+  packet[1] = geoSequence++ & 0xff;
+  view.setInt32(2, geoLatE7, true);
+  view.setInt32(6, geoLonE7, true);
+  packet[10] = displayMode;
+  view.setInt16(11, geoHeading, true);
+  return packet;
+}
+
+function updateGeoReadout() {
+  const readout = document.querySelector('#geo-readout');
+  if (!geoValid) {
+    readout.textContent = 'brak pozycji';
+    return;
+  }
+  readout.textContent = `${(geoLatE7 / 1e7).toFixed(5)}, ${(geoLonE7 / 1e7).toFixed(5)}`;
+}
+
+function sendGeo() {
+  updateGeoReadout();
+  if (!characteristic || !geoValid) return;
+  enqueueWrite(encodeGeo());
+}
+
+function setGeoPosition(lat, lon) {
+  geoLatE7 = Math.round(lat * 1e7);
+  geoLonE7 = Math.round(lon * 1e7);
+  geoValid = true;
+  if (positionMarker) positionMarker.setLatLng([lat, lon]);
+  sendGeo();
+}
+
+function setDisplayMode(mode) {
+  displayMode = mode;
+  document.querySelector('#mode-stats').classList.toggle('active', mode === MODE_STATS);
+  document.querySelector('#mode-map').classList.toggle('active', mode === MODE_MAP);
+  document.querySelector('#geo-status').textContent = mode === MODE_MAP
+    ? 'Tryb mapy: kliknij punkt na mapie, aby wyslac koordynaty.'
+    : 'Tryb statystyk: klikniecie mapy nadal ustawia pozycje.';
+  sendGeo();
+}
+
+function initMapPicker() {
+  mapPicker = L.map('map-picker', { zoomControl: true }).setView(SOLDEN_CENTER, SOLDEN_ZOOM);
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    maxZoom: 17,
+    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | style: &copy; OpenTopoMap (CC-BY-SA)',
+  }).addTo(mapPicker);
+  positionMarker = L.circleMarker(SOLDEN_CENTER, {
+    radius: 7,
+    color: '#7bd6ff',
+    weight: 2,
+    fillColor: '#1f7cff',
+    fillOpacity: 0.9,
+  }).addTo(mapPicker);
+  geoLatE7 = Math.round(SOLDEN_CENTER[0] * 1e7);
+  geoLonE7 = Math.round(SOLDEN_CENTER[1] * 1e7);
+  geoValid = true;
+  mapPicker.on('click', (event) => setGeoPosition(event.latlng.lat, event.latlng.lng));
+}
+
+function enablePhoneGps() {
+  if (!navigator.geolocation) {
+    document.querySelector('#geo-status').textContent = 'Geolokalizacja niedostepna.';
+    return;
+  }
+  if (geoWatchId !== undefined) return;
+  geoWatchId = navigator.geolocation.watchPosition((position) => {
+    const heading = position.coords.heading;
+    geoHeading = (heading === null || Number.isNaN(heading)) ? -1 : Math.round(heading);
+    setGeoPosition(position.coords.latitude, position.coords.longitude);
+    if (mapPicker) mapPicker.setView([position.coords.latitude, position.coords.longitude]);
+  }, () => {
+    document.querySelector('#geo-status').textContent = 'Brak dostepu do GPS.';
+  }, { enableHighAccuracy: true });
+}
+
 function sendBitmap(layer) {
   if (!characteristic || !bitmapDirty[layer]) return;
   bitmapDirty[layer] = false;
@@ -320,6 +416,7 @@ async function connectBluetooth() {
     characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
     setConnectionState('Polaczono', `${device.name || 'HUD ESP32-S3'} / transmisja aktywna`, true);
     sendState();
+    sendGeo();
     bitmapDirty.map = true;
     bitmapDirty.route = true;
     sendDirtyBitmaps();
@@ -422,6 +519,11 @@ setActiveLayer('map');
 updateArrowReadout();
 drawMapEditor();
 renderOled();
+document.querySelector('#mode-stats').addEventListener('click', () => setDisplayMode(MODE_STATS));
+document.querySelector('#mode-map').addEventListener('click', () => setDisplayMode(MODE_MAP));
+document.querySelector('#gps-button').addEventListener('click', enablePhoneGps);
+initMapPicker();
+setDisplayMode(MODE_STATS);
 window.setInterval(animateRoute, ROUTE_ANIMATION_INTERVAL);
 
 if ('serviceWorker' in navigator) {

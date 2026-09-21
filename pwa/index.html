@@ -67,6 +67,10 @@
             </div>
             <span class="sync-label" id="sync-label">LOCAL</span>
           </div>
+          <div class="mode-switch" role="group" aria-label="Tryb duzego ekranu">
+            <button class="mode-button active" id="mode-stats" type="button">Statystyki</button>
+            <button class="mode-button" id="mode-map" type="button">Mapa</button>
+          </div>
           <div class="control-grid">
             <label class="field field-large">
               <span>Predkosc <small>km/h</small></span>
@@ -147,6 +151,23 @@
           </div>
           <p class="protocol-note">ESP32 renderuje ekran lokalnie. PWA przesyla tylko stan HUD-u i spakowane piksele mapy.</p>
         </aside>
+      </section>
+
+      <section class="map-picker-grid">
+        <article class="panel map-picker-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">OPENTOPOMAP / OPENSTREETMAP</p>
+              <h3>Mapa testowa <span>Solden, Austria</span></h3>
+            </div>
+            <span class="sync-label" id="geo-readout">brak pozycji</span>
+          </div>
+          <div id="map-picker" class="map-picker"></div>
+          <div class="map-picker-tools">
+            <button class="button button-quiet" id="gps-button" type="button">Uzyj GPS telefonu</button>
+            <span id="geo-status">Kliknij na mapie, aby wybrac pozycje.</span>
+          </div>
+        </article>
       </section>
 
       <footer class="footer-line">

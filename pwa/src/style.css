@@ -124,6 +124,14 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .footer-line { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); color: #527766; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.61rem; }
 .footer-line strong { color: var(--orange); font-weight: 400; }
 
+.mode-switch { display: flex; gap: 6px; margin: 0 0 17px; }
+.mode-button { flex: 1; border: 1px solid #315b49; border-radius: 2px; padding: 9px 12px; background: transparent; color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
+.mode-button:hover, .mode-button.active { border-color: var(--mint); background: rgba(114, 241, 184, 0.09); color: var(--mint); }
+.map-picker-grid { margin-top: 18px; }
+.map-picker-panel { padding: 20px; }
+.map-picker { position: relative; z-index: 0; width: 100%; height: 300px; border: 1px solid #3e775c; border-radius: 3px; background: #050b09; }
+.map-picker-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; color: var(--muted); font-size: 0.72rem; }
+
 @media (max-width: 800px) {
   .app-shell { width: min(100% - 24px, 600px); padding-top: 16px; }
   .hero-grid, .workspace-grid, .lower-grid { grid-template-columns: 1fr; }
