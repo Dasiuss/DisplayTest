@@ -19,6 +19,7 @@ const SOLDEN_CENTER = [46.9667, 11.0083];
 const SOLDEN_ZOOM = 14;
 const MODE_STATS = 0;
 const MODE_MAP = 1;
+const ZOOM_LEVELS = [250, 500, 1000, 2000, 4000];
 
 const values = {
   speed: document.querySelector('#speed'),
@@ -51,6 +52,7 @@ let writeQueue = Promise.resolve();
 let queuedWriteCount = 0;
 
 let displayMode = MODE_STATS;
+let zoomIndex = 3;
 let geoSequence = 0;
 let geoLatE7 = 0;
 let geoLonE7 = 0;
@@ -273,7 +275,7 @@ function sendState() {
 }
 
 function encodeGeo() {
-  const packet = new Uint8Array(13);
+  const packet = new Uint8Array(14);
   const view = new DataView(packet.buffer);
   packet[0] = 0x47;
   packet[1] = geoSequence++ & 0xff;
@@ -281,6 +283,7 @@ function encodeGeo() {
   view.setInt32(6, geoLonE7, true);
   packet[10] = displayMode;
   view.setInt16(11, geoHeading, true);
+  packet[13] = zoomIndex;
   return packet;
 }
 
@@ -307,13 +310,31 @@ function setGeoPosition(lat, lon) {
   sendGeo();
 }
 
+function zoomLabel() {
+  const meters = ZOOM_LEVELS[zoomIndex];
+  return meters >= 1000 ? `${meters / 1000} km` : `${meters} m`;
+}
+
+function updateGeoStatus() {
+  document.querySelector('#geo-status').textContent = displayMode === MODE_MAP
+    ? `Tryb mapy, widok ${zoomLabel()}: kliknij punkt, aby wyslac pozycje.`
+    : `Tryb statystyk (zoom ${zoomLabel()}): klikniecie mapy ustawia pozycje.`;
+}
+
 function setDisplayMode(mode) {
   displayMode = mode;
   document.querySelector('#mode-stats').classList.toggle('active', mode === MODE_STATS);
   document.querySelector('#mode-map').classList.toggle('active', mode === MODE_MAP);
-  document.querySelector('#geo-status').textContent = mode === MODE_MAP
-    ? 'Tryb mapy: kliknij punkt na mapie, aby wyslac koordynaty.'
-    : 'Tryb statystyk: klikniecie mapy nadal ustawia pozycje.';
+  updateGeoStatus();
+  sendGeo();
+}
+
+function setZoom(index) {
+  zoomIndex = index;
+  document.querySelectorAll('.zoom-button').forEach((button) => {
+    button.classList.toggle('active', Number(button.dataset.zoom) === index);
+  });
+  updateGeoStatus();
   sendGeo();
 }
 
@@ -522,6 +543,9 @@ renderOled();
 document.querySelector('#mode-stats').addEventListener('click', () => setDisplayMode(MODE_STATS));
 document.querySelector('#mode-map').addEventListener('click', () => setDisplayMode(MODE_MAP));
 document.querySelector('#gps-button').addEventListener('click', enablePhoneGps);
+document.querySelectorAll('.zoom-button').forEach((button) => {
+  button.addEventListener('click', () => setZoom(Number(button.dataset.zoom)));
+});
 initMapPicker();
 setDisplayMode(MODE_STATS);
 window.setInterval(animateRoute, ROUTE_ANIMATION_INTERVAL);
