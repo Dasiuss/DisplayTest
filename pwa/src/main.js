@@ -61,6 +61,8 @@ let queuedWriteCount = 0;
 
 let displayMode = MODE_STATS;
 let zoomIndex = 2;
+let fisheyeRadius = 270;
+let fisheyeSendTimer;
 let geoSequence = 0;
 let geoLatE7 = 0;
 let geoLonE7 = 0;
@@ -285,7 +287,7 @@ function sendState() {
 }
 
 function encodeGeo() {
-  const packet = new Uint8Array(14);
+  const packet = new Uint8Array(16);
   const view = new DataView(packet.buffer);
   packet[0] = 0x47;
   packet[1] = geoSequence++ & 0xff;
@@ -294,6 +296,7 @@ function encodeGeo() {
   packet[10] = displayMode;
   view.setInt16(11, geoHeading, true);
   packet[13] = zoomIndex;
+  view.setUint16(14, fisheyeRadius, true);
   return packet;
 }
 
@@ -599,6 +602,17 @@ renderOled();
 document.querySelector('#mode-stats').addEventListener('click', () => setDisplayMode(MODE_STATS));
 document.querySelector('#mode-map').addEventListener('click', () => setDisplayMode(MODE_MAP));
 document.querySelector('#gps-button').addEventListener('click', enablePhoneGps);
+const fisheyeInput = document.querySelector('#fisheye');
+fisheyeInput.addEventListener('input', () => {
+  fisheyeRadius = Number(fisheyeInput.value);
+  document.querySelector('#fisheye-value').textContent = String(fisheyeRadius);
+  if (!fisheyeSendTimer) {
+    fisheyeSendTimer = window.setTimeout(() => {
+      fisheyeSendTimer = undefined;
+      sendGeo();
+    }, 120);
+  }
+});
 document.querySelectorAll('.zoom-button').forEach((button) => {
   button.addEventListener('click', () => setZoom(Number(button.dataset.zoom)));
 });

@@ -169,6 +169,11 @@
             <button class="zoom-button" data-zoom="3" type="button">10 km</button>
             <button class="zoom-button" data-zoom="4" type="button">20 km</button>
           </div>
+          <div class="fisheye-row">
+            <label for="fisheye">Fisheye</label>
+            <input type="range" id="fisheye" min="100" max="500" step="10" value="270" />
+            <span id="fisheye-value">270</span>
+          </div>
           <div id="map-picker" class="map-picker"></div>
           <div class="layer-toggles">
             <label><input type="checkbox" id="show-pistes" checked /> Trasy</label>
