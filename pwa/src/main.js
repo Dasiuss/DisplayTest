@@ -20,6 +20,7 @@ const SOLDEN_ZOOM = 14;
 const MODE_STATS = 0;
 const MODE_MAP = 1;
 const ZOOM_LEVELS = [250, 500, 1000, 2000, 4000];
+const ZOOM_LABELS = ['1.2 km', '2.5 km', '5 km', '10 km', '20 km'];
 const PISTE_COLORS = {
   novice: '#2ecc40',
   easy: '#1f7cff',
@@ -59,7 +60,7 @@ let writeQueue = Promise.resolve();
 let queuedWriteCount = 0;
 
 let displayMode = MODE_STATS;
-let zoomIndex = 3;
+let zoomIndex = 2;
 let geoSequence = 0;
 let geoLatE7 = 0;
 let geoLonE7 = 0;
@@ -320,14 +321,13 @@ function setGeoPosition(lat, lon) {
 }
 
 function zoomLabel() {
-  const meters = ZOOM_LEVELS[zoomIndex];
-  return meters >= 1000 ? `${meters / 1000} km` : `${meters} m`;
+  return ZOOM_LABELS[zoomIndex];
 }
 
 function updateGeoStatus() {
   document.querySelector('#geo-status').textContent = displayMode === MODE_MAP
-    ? `Tryb mapy, widok ${zoomLabel()}: kliknij punkt, aby wyslac pozycje.`
-    : `Tryb statystyk (zoom ${zoomLabel()}): klikniecie mapy ustawia pozycje.`;
+    ? `Tryb mapy, kontekst do ${zoomLabel()}: kliknij punkt, aby wyslac pozycje.`
+    : `Tryb statystyk (kontekst ${zoomLabel()}): klikniecie mapy ustawia pozycje.`;
 }
 
 function setDisplayMode(mode) {
