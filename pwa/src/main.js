@@ -20,6 +20,13 @@ const SOLDEN_ZOOM = 14;
 const MODE_STATS = 0;
 const MODE_MAP = 1;
 const ZOOM_LEVELS = [250, 500, 1000, 2000, 4000];
+const PISTE_COLORS = {
+  novice: '#2ecc40',
+  easy: '#1f7cff',
+  intermediate: '#e53935',
+  advanced: '#111111',
+  freeride: '#ff9800',
+};
 
 const values = {
   speed: document.querySelector('#speed'),
@@ -61,6 +68,8 @@ let geoValid = false;
 let mapPicker;
 let positionMarker;
 let geoWatchId;
+let pistesLayer;
+let liftsLayer;
 
 document.querySelector('#app-version').textContent = APP_VERSION;
 
@@ -357,6 +366,53 @@ function initMapPicker() {
   mapPicker.on('click', (event) => setGeoPosition(event.latlng.lat, event.latlng.lng));
 }
 
+function pisteColor(piste) {
+  if (piste.k === 'snow_park') return '#d81bff';
+  if (piste.k === 'connection') return '#7b8794';
+  return PISTE_COLORS[piste.d] || '#7b8794';
+}
+
+async function loadMapOverlay() {
+  try {
+    const response = await fetch(`${import.meta.env.BASE_URL}solden-pistes.json`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    pistesLayer = L.layerGroup();
+    liftsLayer = L.layerGroup();
+    for (const piste of data.pistes) {
+      L.polyline(piste.c, { color: pisteColor(piste), weight: 3, opacity: 0.85 })
+        .bindTooltip(piste.n || 'trasa', { sticky: true })
+        .on('click', (event) => setGeoPosition(event.latlng.lat, event.latlng.lng))
+        .addTo(pistesLayer);
+    }
+    for (const lift of data.lifts) {
+      L.polyline(lift.c, { color: '#8d6e63', weight: 2, opacity: 0.85, dashArray: '5 6' })
+        .bindTooltip(lift.n || 'wyciag', { sticky: true })
+        .on('click', (event) => setGeoPosition(event.latlng.lat, event.latlng.lng))
+        .addTo(liftsLayer);
+    }
+    applyLayerVisibility();
+    document.querySelector('#geo-status').textContent =
+      `Wczytano ${data.pistes.length} tras i ${data.lifts.length} wyciagow (Overpass).`;
+  } catch (error) {
+    document.querySelector('#geo-status').textContent = `Nie udalo sie wczytac tras: ${error.message}`;
+  }
+}
+
+function applyLayerVisibility() {
+  const showPistes = document.querySelector('#show-pistes').checked;
+  const showLifts = document.querySelector('#show-lifts').checked;
+  if (pistesLayer) {
+    if (showPistes) pistesLayer.addTo(mapPicker);
+    else mapPicker.removeLayer(pistesLayer);
+  }
+  if (liftsLayer) {
+    if (showLifts) liftsLayer.addTo(mapPicker);
+    else mapPicker.removeLayer(liftsLayer);
+  }
+  if (positionMarker) positionMarker.bringToFront();
+}
+
 function enablePhoneGps() {
   if (!navigator.geolocation) {
     document.querySelector('#geo-status').textContent = 'Geolokalizacja niedostepna.';
@@ -546,7 +602,10 @@ document.querySelector('#gps-button').addEventListener('click', enablePhoneGps);
 document.querySelectorAll('.zoom-button').forEach((button) => {
   button.addEventListener('click', () => setZoom(Number(button.dataset.zoom)));
 });
+document.querySelector('#show-pistes').addEventListener('change', applyLayerVisibility);
+document.querySelector('#show-lifts').addEventListener('change', applyLayerVisibility);
 initMapPicker();
+loadMapOverlay();
 setDisplayMode(MODE_STATS);
 window.setInterval(animateRoute, ROUTE_ANIMATION_INTERVAL);
 
