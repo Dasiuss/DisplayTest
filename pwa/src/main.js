@@ -60,8 +60,8 @@ let writeQueue = Promise.resolve();
 let queuedWriteCount = 0;
 
 let displayMode = MODE_STATS;
-let zoomIndex = 2;
-let fisheyeRadius = 270;
+let zoomIndex = 1;
+let fisheyeRadius = 220;
 let fisheyeSendTimer;
 let geoSequence = 0;
 let geoLatE7 = 0;
