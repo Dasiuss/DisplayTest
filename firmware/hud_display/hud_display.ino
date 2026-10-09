@@ -6,6 +6,20 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#warning "secrets.h not found; copy firmware/secrets.example.h into the sketch folder"
+#define WIFI_NETWORK_COUNT 0
+#define OTA_PASSWORD "hud-ota"
+#define ESPNOW_FALLBACK_CHANNEL 1
+static const char *WIFI_SSIDS[1] = {""};
+static const char *WIFI_PASSES[1] = {""};
+#endif
 
 static const char *FIRMWARE_VERSION = "v0.7.0";
 static const uint8_t I2C_SDA_PIN = 1;
@@ -70,6 +84,36 @@ unsigned long lastRender = 0;
 unsigned long lastStateLog = 0;
 unsigned long lastRouteStep = 0;
 uint16_t routeCursor = 0;
+
+static const uint8_t ESPNOW_BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static const unsigned long WIFI_ATTEMPT_TIMEOUT_MS = 12000;
+static const unsigned long WIFI_SEARCH_INTERVAL_MS = 30000;
+static const unsigned long ESPNOW_SEND_INTERVAL_MS = 200;
+
+bool espNowReady = false;
+bool wifiConnected = false;
+bool wifiSearching = false;
+int wifiNetIndex = 0;
+unsigned long wifiAttemptStart = 0;
+unsigned long lastEspNowSend = 0;
+uint8_t espNowSequence = 0;
+volatile bool espNowPending = false;
+
+static const uint8_t MAP_MODE_STATS = 0;
+static const uint8_t MAP_MODE_MAP = 1;
+static const unsigned long LOCATION_HEARTBEAT_MS = 2000;
+
+volatile uint8_t displayMode = MAP_MODE_STATS;
+volatile uint8_t locationZoom = 1;
+volatile uint16_t geoFisheye = 220;
+volatile int32_t geoLatE7 = 0;
+volatile int32_t geoLonE7 = 0;
+volatile int16_t geoHeading = -1;
+volatile bool geoValid = false;
+volatile bool locationPending = false;
+
+unsigned long lastLocationSend = 0;
+uint8_t locationSequence = 0;
 
 uint16_t readUint16(const uint8_t *data) {
   return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
@@ -261,6 +305,7 @@ void applyStatePacket(const uint8_t *data, size_t length) {
                   hudState.remaining);
     lastStateLog = millis();
   }
+  espNowPending = true;
 }
 
 void applyBitmapPacket(const uint8_t *data, size_t length) {
@@ -299,6 +344,156 @@ void applyBitmapPacket(const uint8_t *data, size_t length) {
   }
 }
 
+void startEspNow() {
+  if (esp_now_init() != ESP_OK) {
+    Serial.printf("[%s] ESP-NOW init failed\n", FIRMWARE_VERSION);
+    return;
+  }
+  esp_now_peer_info_t peer;
+  memset(&peer, 0, sizeof(peer));
+  memcpy(peer.peer_addr, ESPNOW_BROADCAST, sizeof(ESPNOW_BROADCAST));
+  peer.channel = 0;
+  peer.encrypt = false;
+  if (esp_now_add_peer(&peer) != ESP_OK) {
+    Serial.printf("[%s] ESP-NOW add peer failed\n", FIRMWARE_VERSION);
+    return;
+  }
+  espNowReady = true;
+  Serial.printf("[%s] ESP-NOW ready (broadcast)\n", FIRMWARE_VERSION);
+}
+
+void useFallbackChannel() {
+  esp_wifi_set_channel(ESPNOW_FALLBACK_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  Serial.printf("[%s] ESP-NOW fallback channel %u\n", FIRMWARE_VERSION, ESPNOW_FALLBACK_CHANNEL);
+}
+
+void wifiStartNext() {
+#if WIFI_NETWORK_COUNT > 0
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSIDS[wifiNetIndex], WIFI_PASSES[wifiNetIndex]);
+  Serial.printf("[%s] WiFi: trying %s\n", FIRMWARE_VERSION, WIFI_SSIDS[wifiNetIndex]);
+  wifiNetIndex = (wifiNetIndex + 1) % WIFI_NETWORK_COUNT;
+  wifiAttemptStart = millis();
+  wifiSearching = true;
+#else
+  useFallbackChannel();
+  wifiAttemptStart = millis();
+  wifiSearching = false;
+#endif
+}
+
+void serviceWifi() {
+  if (wifiConnected) {
+    if (WiFi.status() != WL_CONNECTED) {
+      wifiConnected = false;
+      wifiSearching = false;
+      wifiAttemptStart = millis();
+      useFallbackChannel();
+    }
+    return;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    wifiSearching = false;
+    Serial.printf("[%s] WiFi connected: %s channel=%d rssi=%d ip=%s\n",
+                  FIRMWARE_VERSION,
+                  WiFi.SSID().c_str(),
+                  WiFi.channel(),
+                  WiFi.RSSI(),
+                  WiFi.localIP().toString().c_str());
+    return;
+  }
+  const unsigned long elapsed = millis() - wifiAttemptStart;
+  if (wifiSearching) {
+    if (elapsed > WIFI_ATTEMPT_TIMEOUT_MS) {
+      wifiSearching = false;
+      wifiAttemptStart = millis();
+      useFallbackChannel();
+    }
+  } else if (elapsed > WIFI_SEARCH_INTERVAL_MS) {
+    wifiStartNext();
+  }
+}
+
+void sendEspNowState() {
+  if (!espNowReady) return;
+
+  uint8_t packet[13];
+  packet[0] = 'S';
+  packet[1] = espNowSequence++;
+  packet[2] = hudState.speed & 0xFF;
+  packet[3] = (hudState.speed >> 8) & 0xFF;
+  const uint16_t angle = static_cast<uint16_t>(hudState.navigationAngle);
+  packet[4] = angle & 0xFF;
+  packet[5] = (angle >> 8) & 0xFF;
+  packet[6] = hudState.average & 0xFF;
+  packet[7] = (hudState.average >> 8) & 0xFF;
+  packet[8] = hudState.remaining & 0xFF;
+  packet[9] = (hudState.remaining >> 8) & 0xFF;
+  packet[10] = hudState.total & 0xFF;
+  packet[11] = (hudState.total >> 8) & 0xFF;
+  packet[12] = hudState.frameEnabled ? 0x01 : 0x00;
+  esp_now_send(ESPNOW_BROADCAST, packet, sizeof(packet));
+}
+
+int32_t readInt32(const uint8_t *data) {
+  return static_cast<int32_t>(static_cast<uint32_t>(data[0]) |
+                              (static_cast<uint32_t>(data[1]) << 8) |
+                              (static_cast<uint32_t>(data[2]) << 16) |
+                              (static_cast<uint32_t>(data[3]) << 24));
+}
+
+void sendLocationPacket() {
+  if (!espNowReady || !geoValid) return;
+
+  const int32_t lat = geoLatE7;
+  const int32_t lon = geoLonE7;
+  const int16_t heading = geoHeading;
+  const uint16_t fisheye = geoFisheye;
+
+  uint8_t packet[16];
+  packet[0] = 'L';
+  packet[1] = locationSequence++;
+  packet[2] = displayMode;
+  packet[3] = locationZoom;
+  packet[4] = static_cast<uint8_t>(lat & 0xFF);
+  packet[5] = static_cast<uint8_t>((lat >> 8) & 0xFF);
+  packet[6] = static_cast<uint8_t>((lat >> 16) & 0xFF);
+  packet[7] = static_cast<uint8_t>((lat >> 24) & 0xFF);
+  packet[8] = static_cast<uint8_t>(lon & 0xFF);
+  packet[9] = static_cast<uint8_t>((lon >> 8) & 0xFF);
+  packet[10] = static_cast<uint8_t>((lon >> 16) & 0xFF);
+  packet[11] = static_cast<uint8_t>((lon >> 24) & 0xFF);
+  packet[12] = static_cast<uint8_t>(heading & 0xFF);
+  packet[13] = static_cast<uint8_t>((heading >> 8) & 0xFF);
+  packet[14] = static_cast<uint8_t>(fisheye & 0xFF);
+  packet[15] = static_cast<uint8_t>((fisheye >> 8) & 0xFF);
+  esp_now_send(ESPNOW_BROADCAST, packet, sizeof(packet));
+  lastLocationSend = millis();
+}
+
+void applyGeoPacket(const uint8_t *data, size_t length) {
+  if (length < 16) return;
+
+  geoLatE7 = readInt32(data + 2);
+  geoLonE7 = readInt32(data + 6);
+  displayMode = data[10];
+  geoHeading = static_cast<int16_t>(data[11] | (data[12] << 8));
+  locationZoom = data[13];
+  geoFisheye = static_cast<uint16_t>(data[14] | (data[15] << 8));
+  geoValid = true;
+  locationPending = true;
+
+  Serial.printf("[%s] Geo %.5f, %.5f mode=%u zoom=%u fisheye=%u heading=%d\n",
+                FIRMWARE_VERSION,
+                geoLatE7 / 1e7,
+                geoLonE7 / 1e7,
+                static_cast<unsigned>(displayMode),
+                static_cast<unsigned>(locationZoom),
+                static_cast<unsigned>(geoFisheye),
+                geoHeading);
+}
+
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *) override {
     clientConnected = true;
@@ -322,6 +517,8 @@ class DisplayCallbacks : public BLECharacteristicCallbacks {
       applyStatePacket(data, length);
     } else if (data[0] == 'M' || data[0] == 'R') {
       applyBitmapPacket(data, length);
+    } else if (data[0] == 'G') {
+      applyGeoPacket(data, length);
     }
   }
 };
@@ -380,6 +577,12 @@ void setup() {
   }
 
   startBluetooth();
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect();
+  startEspNow();
+  wifiStartNext();
 }
 
 void loop() {
@@ -389,5 +592,18 @@ void loop() {
     screenDirty = true;
   }
   if (displayReady && screenDirty && millis() - lastRender >= 10) renderHud();
+
+  serviceWifi();
+  if (espNowReady && (espNowPending || millis() - lastEspNowSend >= ESPNOW_SEND_INTERVAL_MS)) {
+    sendEspNowState();
+    espNowPending = false;
+    lastEspNowSend = millis();
+  }
+  if (geoValid && espNowReady && (locationPending || millis() - lastLocationSend >= LOCATION_HEARTBEAT_MS)) {
+    sendLocationPacket();
+    locationPending = false;
+    lastLocationSend = millis();
+  }
+
   delay(1);
 }

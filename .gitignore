@@ -3,3 +3,6 @@ pwa/dist/
 .DS_Store
 *.user
 *.tmp
+firmware/secrets.h
+firmware/*/secrets.h
+tools/data/
